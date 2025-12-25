@@ -363,8 +363,8 @@ Content is approved immediately. Perfect for testing, bulk generation, or conten
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/your-repo/bioai-unified.git
-cd bioai-unified
+git clone https://github.com/jordicor/BioAI_Unified.git
+cd BioAI_Unified
 python quick_start.py
 ```
 
