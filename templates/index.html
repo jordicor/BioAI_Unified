@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BioAI Unified Engine - Content Generation Platform</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Global Header -->
+        <header class="global-header">
+            <h1 class="logo">BioAI <span class="accent">Unified</span></h1>
+            <div class="header-actions">
+                <a href="/admin/openrouter" class="btn-config" title="Configure OpenRouter Models">
+                    <span class="config-icon">[OR]</span>
+                    <span class="config-text">OPENROUTER</span>
+                </a>
+                <a href="/monitor" class="btn-monitor" title="Live Stream Monitor">
+                    <span class="monitor-icon">[:::]</span>
+                    <span class="monitor-text">LIVE MATRIX</span>
+                </a>
+                <button id="backToConfigBtn" class="btn-back" style="display: none;">Back to Configuration</button>
+            </div>
+        </header>
+
+        <!-- Screen 1: Configuration -->
+        <main class="screen configuration-screen" id="configurationScreen">
+            <div class="configuration-container">
+                <div class="configuration-header">
+                    <h2 class="screen-title">Configure Your Content Generation</h2>
+                    <p class="screen-subtitle">Set up all parameters before starting the generation process</p>
+                </div>
+
+                <!-- Configuration Tabs -->
+                <div class="config-tabs">
+                    <div class="tab-navigation">
+                        <button class="config-tab-btn active" data-tab="generation">
+                            <span class="tab-label">Generation</span>
+                        </button>
+                        <button class="config-tab-btn" data-tab="quality">
+                            <span class="tab-label">Quality Assurance</span>
+                        </button>
+                        <button class="config-tab-btn" data-tab="advanced">
+                            <span class="tab-label">Advanced Settings</span>
+                        </button>
+                    </div>
+                    
+                    <div class="tab-content-area">
+                        <form id="generationForm" class="generation-form">
+                            <!-- Generation Tab -->
+                            <div class="config-tab-panel active" id="generation-panel">
+                            <div class="form-section">
+                                <h3 class="section-title">Content Settings</h3>
+                                
+                                <div class="form-group">
+                                    <label for="prompt" class="form-label">Content Prompt</label>
+                                    <textarea 
+                                        id="prompt" 
+                                        name="prompt" 
+                                        class="form-textarea" 
+                                        rows="3" 
+                                        placeholder="Describe the content you want to generate..."
+                                        required
+                                    ></textarea>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="contentType" class="form-label">Type</label>
+                                        <select id="contentType" name="contentType" class="form-select">
+                                            <option value="article" selected>Article</option>
+                                            <option value="biography">Biography</option>
+                                            <option value="script">Script</option>
+                                            <option value="novel">Novel</option>
+                                            <option value="essay">Essay</option>
+                                            <option value="technical">Technical</option>
+                                            <option value="creative">Creative</option>
+                                            <option value="json">JSON</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="generatorModel" class="form-label">Model</label>
+                                        <select id="generatorModel" name="generatorModel" class="form-select">
+                                            <option value="">Loading models...</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="temperature" class="form-label">Creativity</label>
+                                        <div class="slider-container">
+                                            <input 
+                                                type="range" 
+                                                id="temperature" 
+                                                name="temperature" 
+                                                min="0" 
+                                                max="2" 
+                                                step="0.1" 
+                                                value="0.7"
+                                                class="form-slider"
+                                            >
+                                            <span class="slider-value">0.7</span>
+                                        </div>
+                                    </div>
+                                    <div class="form-group" id="reasoningEffortGroup" style="display: none;">
+                                        <label for="reasoningEffort" class="form-label">
+                                            Reasoning Effort
+                                            <span class="info-tooltip" data-tooltip="Controls how much computational thinking the model does (OpenAI O1, O3, GPT-5, O3-pro only)">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                                                </svg>
+                                            </span>
+                                        </label>
+                                        <select id="reasoningEffort" name="reasoningEffort" class="form-select">
+                                            <option value="minimal">Minimal (Fastest)</option>
+                                            <option value="low">Low</option>
+                                            <option value="medium" selected>Medium (Balanced)</option>
+                                            <option value="high">High (Deep thinking)</option>
+                                        </select>
+                                        <small class="form-help">Higher effort = better quality but slower response</small>
+                                    </div>
+                                    <div class="form-group" id="thinkingBudgetGroup" style="display: none;">
+                                        <label for="thinkingBudgetTokens" class="form-label">
+                                            Thinking Budget
+                                            <span class="info-tooltip" data-tooltip="Number of tokens for internal thinking (Claude 3.7/4 only)">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                                                </svg>
+                                            </span>
+                                        </label>
+                                        <div class="slider-container">
+                                            <input 
+                                                type="range" 
+                                                id="thinkingBudgetTokens" 
+                                                name="thinkingBudgetTokens" 
+                                                min="1024" 
+                                                max="16384" 
+                                                step="1024" 
+                                                value="4000"
+                                                class="form-slider"
+                                            >
+                                            <span class="slider-value">4K tokens</span>
+                                        </div>
+                                        <small class="form-help">More tokens = deeper analysis but higher cost</small>
+                                    </div>
+                                    <div class="form-group word-count-group">
+                                        <label class="form-label">Word Count</label>
+                                        <div class="word-count-inputs">
+                                            <input 
+                                                type="number" 
+                                                id="minWords" 
+                                                name="minWords" 
+                                                class="form-input" 
+                                                placeholder="Min"
+                                                min="1" 
+                                                max="100000"
+                                                oninput="updateTokenEstimate()"
+                                            >
+                                            <span class="word-separator">—</span>
+                                            <input 
+                                                type="number" 
+                                                id="maxWords" 
+                                                name="maxWords" 
+                                                class="form-input" 
+                                                value="3000" 
+                                                min="1" 
+                                                max="100000"
+                                                oninput="updateTokenEstimate()"
+                                            >
+                                        </div>
+                                        <small class="form-help" id="tokenEstimate">≈ 4000 tokens (estimated)</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-section">
+                                <h3 class="section-title">Word Count Enforcement</h3>
+                                
+                                <div class="form-group">
+                                    <label class="checkbox-wrapper">
+                                        <input type="checkbox" id="wordCountEnabled" name="wordCountEnabled" class="checkbox-input">
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-label">Enable strict word count validation</span>
+                                    </label>
+                                    <small class="form-help">Validates content against word count requirements with configurable tolerance</small>
+                                </div>
+
+                                <div id="wordCountOptions" class="word-count-options" style="display: none;">
+                                    <!-- Tolerance Configuration -->
+                                    <div class="tolerance-config">
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="flexibilityPercent" class="form-label">Tolerance Percentage</label>
+                                                <div class="slider-container">
+                                                    <input 
+                                                        type="range" 
+                                                        id="flexibilityPercent" 
+                                                        name="flexibilityPercent" 
+                                                        min="0" 
+                                                        max="50" 
+                                                        step="1" 
+                                                        value="15"
+                                                        class="form-slider"
+                                                    >
+                                                    <span class="slider-value">15%</span>
+                                                </div>
+                                            </div>
+
+                                            <div class="form-group">
+                                                <label class="form-label">Acceptable Range</label>
+                                                <div class="word-count-preview" id="wordCountPreview">
+                                                    <span id="acceptableRange">Set word count range first</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Direction Controls -->
+                                    <div class="direction-config">
+                                        <label class="form-label">Tolerance Direction</label>
+                                        <div class="direction-buttons">
+                                            <label class="direction-option">
+                                                <input type="radio" name="flexibilityDirection" value="less" class="direction-radio">
+                                                <span class="direction-btn">
+                                                    <span class="direction-icon">←</span>
+                                                    <span class="direction-text">Under Only</span>
+                                                </span>
+                                            </label>
+                                            <label class="direction-option">
+                                                <input type="radio" name="flexibilityDirection" value="both" class="direction-radio" checked>
+                                                <span class="direction-btn">
+                                                    <span class="direction-icon">↔</span>
+                                                    <span class="direction-text">Both</span>
+                                                </span>
+                                            </label>
+                                            <label class="direction-option">
+                                                <input type="radio" name="flexibilityDirection" value="more" class="direction-radio">
+                                                <span class="direction-btn">
+                                                    <span class="direction-icon">→</span>
+                                                    <span class="direction-text">Over Only</span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Enforcement Severity -->
+                                    <div class="severity-config">
+                                        <div class="form-group">
+                                            <label for="wordCountSeverity" class="form-label">
+                                                Enforcement Severity
+                                                <span class="info-tooltip" data-tooltip="Important: Lowers score but continues generation | Critical: Hard fail, requires regeneration">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                                                    </svg>
+                                                </span>
+                                            </label>
+                                            <select id="wordCountSeverity" name="wordCountSeverity" class="form-select">
+                                                <option value="important" selected>Important (Lower score, continue)</option>
+                                                <option value="deal_breaker">Critical (Hard fail, regenerate)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                            
+                            <!-- Quality Assurance Tab -->
+                            <div class="config-tab-panel" id="quality-panel">
+                            <div class="form-section">
+                                <h3 class="section-title">QA Models</h3>
+                                
+                                <div class="form-group">
+                                    <div class="qa-model-selector">
+                                        <div class="qa-add-container">
+                                            <select id="qaModelSelect" class="form-select">
+                                                <option value="">Select QA model...</option>
+                                            </select>
+                                            <button type="button" id="addQaModelBtn" class="btn-add">+</button>
+                                        </div>
+                                        
+                                        <div class="qa-selected-models" id="qaSelectedModels"></div>
+                                        
+                                        <div class="qa-recommendations" id="qaRecommendations">
+                                            <small class="form-help">
+                                                <strong>Quick Presets:</strong>
+                                                <button type="button" class="btn-preset" onclick="addRecommendedModels('fast')">Fast</button>
+                                                <button type="button" class="btn-preset" onclick="addRecommendedModels('balanced')">Balanced</button>
+                                                <button type="button" class="btn-preset" onclick="addRecommendedModels('premium')">Premium</button>
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="qa-layers-container">
+                                    <div class="subsection-header">
+                                        <h4 class="subsection-title">Evaluation Layers</h4>
+                                        <small class="form-help">Define specific criteria and requirements for content evaluation</small>
+                                    </div>
+                                    <div id="qaLayers" class="qa-layers"></div>
+                                    <button type="button" id="addQaLayer" class="btn-secondary-small">+ Add Custom Layer</button>
+                                </div>
+
+                                <div class="global-settings">
+                                    <div class="subsection-header">
+                                        <h4 class="subsection-title">Global Quality Settings</h4>
+                                        <small class="form-help">Overall requirements for content approval and retry limits</small>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="minGlobalScore" class="form-label">
+                                                Minimum Global Score
+                                                <span class="info-tooltip" data-tooltip="Average score across all QA layers must meet this threshold for content approval">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                                                    </svg>
+                                                </span>
+                                            </label>
+                                            <div class="slider-container">
+                                                <input 
+                                                    type="range" 
+                                                    id="minGlobalScore" 
+                                                    name="minGlobalScore" 
+                                                    min="1" 
+                                                    max="10" 
+                                                    step="0.1" 
+                                                    value="7.5"
+                                                    class="form-slider"
+                                                >
+                                                <span class="slider-value">7.5</span>
+                                            </div>
+                                            <small class="form-help">Content below this score will be regenerated</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="maxIterations" class="form-label">
+                                                Max Iterations
+                                                <span class="info-tooltip" data-tooltip="Maximum number of regeneration attempts before escalating to Gran Sabio">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                                                    </svg>
+                                                </span>
+                                            </label>
+                                            <input 
+                                                type="number" 
+                                                id="maxIterations" 
+                                                name="maxIterations" 
+                                                class="form-input" 
+                                                value="3" 
+                                                min="1" 
+                                                max="10"
+                                            >
+                                            <small class="form-help">After this limit, Gran Sabio makes final decision</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                            
+                            <!-- Advanced Settings Tab -->
+                            <div class="config-tab-panel" id="advanced-panel">
+                            <div class="form-section">
+                                <h3 class="section-title">Gran Sabio System</h3>
+                                
+                                <div class="form-group">
+                                    <label for="granSabioModel" class="form-label">Gran Sabio Model</label>
+                                    <select id="granSabioModel" name="granSabioModel" class="form-select">
+                                        <option value="">Loading models...</option>
+                                    </select>
+                                    <small class="form-help">Final decision maker when QA models disagree</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="checkbox-wrapper">
+                                        <input type="checkbox" id="granSabioFallback" name="granSabioFallback" class="checkbox-input">
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-label">Enable Gran Sabio regeneration fallback</span>
+                                    </label>
+                                    <small class="form-help">Allow Gran Sabio to regenerate content when iterations are exhausted</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="checkbox-wrapper">
+                                        <input type="checkbox" id="verbose" name="verbose" checked class="checkbox-input">
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-label">Enable verbose logging</span>
+                                    </label>
+                                    <small class="form-help">Show detailed process information</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="checkbox-wrapper">
+                                        <input type="checkbox" id="extra_verbose" name="extra_verbose" class="checkbox-input">
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-label">Enable extra verbose logging</span>
+                                    </label>
+                                    <small class="form-help">Show full AI prompts for debugging (requires verbose logging)</small>
+                                </div>
+                            </div>
+                            </div> <!-- end #advanced-panel -->
+
+                            <!-- Configuration Actions -->
+                            <div class="config-actions">
+                                <button type="button" id="resetBtn" class="btn-secondary">Reset Configuration</button>
+                                <button type="button" id="saveConfigBtn" class="btn-tertiary">Save as Preset</button>
+                                <button type="submit" id="startGenerationBtn" class="btn-primary btn-large">
+                                    <span class="btn-text">Start Generation</span>
+                                    <span class="btn-icon">→</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Screen 2: Processing & Results -->
+        <main class="screen processing-screen" id="processingScreen" style="display: none;">
+            <div class="processing-container">
+                <!-- Processing Header -->
+                <div class="processing-header">
+                    <div class="processing-title-section">
+                        <h2 class="screen-title">Content Generation in Progress</h2>
+                        <div class="session-info">
+                            <span class="session-label">Session:</span>
+                            <span class="session-id" id="sessionIdDisplay">-</span>
+                        </div>
+                    </div>
+                    
+                    <div class="processing-controls">
+                        <button type="button" id="stopGenerationBtn" class="btn-danger">
+                            <span class="btn-text">Stop Generation</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Progress Section -->
+                <div class="progress-dashboard">
+                    <div class="progress-main">
+                        <div class="progress-status">
+                            <div class="status-badge" id="processingStatusBadge">Initializing</div>
+                            <div class="iteration-info">
+                                <span>Iteration</span>
+                                <span class="iteration-current" id="currentIterationDisplay">0</span>
+                                <span>/</span>
+                                <span class="iteration-max" id="maxIterationsDisplay">3</span>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="mainProgressBar">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <div class="progress-text" id="progressText">Preparing generation...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Live Content Streaming -->
+                <div class="streaming-section">
+                    <div class="streaming-header">
+                        <h3 class="section-title">Generated Content</h3>
+                        <div class="streaming-controls">
+                            <button type="button" id="pauseStreamBtn" class="btn-secondary-small">Pause Stream</button>
+                            <button type="button" id="clearStreamBtn" class="btn-secondary-small">Clear Display</button>
+                        </div>
+                    </div>
+                    
+                    <div class="content-stream-container">
+                        <div class="content-stream" id="contentStream">
+                            <div class="stream-placeholder">
+                                <p>Generated content will appear here in real-time...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- QA Feedback Panel -->
+                <div class="qa-feedback-section">
+                    <div class="qa-header">
+                        <h3 class="section-title">Quality Assurance Feedback</h3>
+                        <button type="button" id="toggleQaPanel" class="btn-toggle">Collapse</button>
+                    </div>
+                    
+                    <div class="qa-panels" id="qaFeedbackPanels">
+                        <div class="qa-placeholder">
+                            <p>QA evaluations will appear here as they are processed...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Process Log (Collapsible) -->
+                <div class="log-section">
+                    <div class="log-header">
+                        <h3 class="section-title">Process Log</h3>
+                        <button type="button" id="toggleLogPanel" class="btn-toggle">Expand</button>
+                    </div>
+                    
+                    <div class="log-container collapsed" id="processLogContainer">
+                        <div class="log-content" id="processLogContent"></div>
+                    </div>
+                </div>
+                
+                <!-- Final Results -->
+                <div class="results-section" id="finalResultsSection" style="display: none;">
+                    <div class="results-header">
+                        <h3 class="section-title">Generation Complete</h3>
+                        <div class="result-summary">
+                            <div class="result-metric">
+                                <span class="metric-label">Final Score:</span>
+                                <span class="metric-value" id="finalScoreDisplay">-</span>
+                            </div>
+                            <div class="result-metric">
+                                <span class="metric-label">Iterations Used:</span>
+                                <span class="metric-value" id="finalIterationsDisplay">-</span>
+                            </div>
+                            <div class="result-metric">
+                                <span class="metric-label">Word Count:</span>
+                                <span class="metric-value" id="finalWordCountDisplay">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="final-content">
+                        <div class="content-header">
+                            <h4 class="content-title">Final Content</h4>
+                            <div class="content-actions">
+                                <button type="button" id="copyFinalContent" class="btn-copy">Copy</button>
+                                <button type="button" id="downloadFinalContent" class="btn-download">Download</button>
+                                <button type="button" id="refineContentBtn" class="btn-secondary">Refine</button>
+                            </div>
+                        </div>
+                        
+                        <div class="final-content-display" id="finalContentDisplay"></div>
+                    </div>
+                    
+                    <div class="post-generation-actions">
+                        <button type="button" id="newGenerationBtn" class="btn-primary">Start New Generation</button>
+                        <button type="button" id="duplicateConfigBtn" class="btn-secondary">Duplicate Configuration</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

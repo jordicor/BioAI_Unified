@@ -1,0 +1,1670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BioAI Stream Monitor // LIVE MATRIX</title>
+    <style>
+        /* ============================================
+           RETRO 80s HACKER TERMINAL AESTHETIC
+           ============================================ */
+
+        :root {
+            --bg-dark: #0a0a0a;
+            --bg-panel: #0d1117;
+            --bg-header: #161b22;
+            --green: #00ff41;
+            --green-dim: #00aa2a;
+            --amber: #ffb000;
+            --cyan: #00ffff;
+            --red: #ff3333;
+            --white: #c9d1d9;
+            --gray: #484f58;
+            --border: #30363d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Consolas', 'Monaco', 'Lucida Console', monospace;
+            background: var(--bg-dark);
+            color: var(--green);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Scanlines overlay */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            z-index: 9999;
+        }
+
+        /* ============================================
+           HEADER
+           ============================================ */
+
+        .header {
+            background: var(--bg-header);
+            border-bottom: 1px solid var(--green-dim);
+            padding: 15px 20px;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.1);
+        }
+
+        .header-title {
+            font-size: 18px;
+            color: var(--green);
+            text-shadow: 0 0 10px var(--green);
+            letter-spacing: 2px;
+        }
+
+        .header-subtitle {
+            font-size: 11px;
+            color: var(--gray);
+            margin-top: 4px;
+        }
+
+        /* ============================================
+           MAIN CONTAINER
+           ============================================ */
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* ============================================
+           NAVIGATION BAR
+           ============================================ */
+
+        .nav-bar {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .nav-bar a {
+            text-decoration: none;
+        }
+
+        /* ============================================
+           CONNECTION PANEL
+           ============================================ */
+
+        .connection-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: var(--bg-header);
+            padding: 10px 15px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--amber);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .connection-content {
+            padding: 15px;
+        }
+
+        .connection-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .input-group label {
+            color: var(--gray);
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .input-group input {
+            flex: 1;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 8px 12px;
+            color: var(--cyan);
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--green);
+            box-shadow: 0 0 5px rgba(0, 255, 65, 0.3);
+        }
+
+        .input-group input::placeholder {
+            color: var(--gray);
+        }
+
+        .btn {
+            padding: 8px 20px;
+            border: 1px solid;
+            border-radius: 3px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+
+        .btn-connect {
+            background: transparent;
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .btn-connect:hover {
+            background: var(--green);
+            color: var(--bg-dark);
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.5);
+        }
+
+        .btn-disconnect {
+            background: transparent;
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        .btn-disconnect:hover {
+            background: var(--red);
+            color: var(--bg-dark);
+            box-shadow: 0 0 15px rgba(255, 51, 51, 0.5);
+        }
+
+        .btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* Connection status indicator */
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 15px;
+            border-radius: 3px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-indicator.disconnected {
+            background: rgba(255, 51, 51, 0.1);
+            border: 1px solid var(--red);
+            color: var(--red);
+        }
+
+        .status-indicator.connecting {
+            background: rgba(255, 176, 0, 0.1);
+            border: 1px solid var(--amber);
+            color: var(--amber);
+        }
+
+        .status-indicator.connected {
+            background: rgba(0, 255, 65, 0.1);
+            border: 1px solid var(--green);
+            color: var(--green);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .status-indicator.connected .status-dot {
+            animation: pulse-dot 2s infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* ============================================
+           RECENT PROJECTS
+           ============================================ */
+
+        .recent-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .recent-header {
+            background: var(--bg-header);
+            padding: 10px 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .recent-header-title {
+            font-size: 12px;
+            color: var(--amber);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .recent-header-count {
+            font-size: 11px;
+            color: var(--gray);
+        }
+
+        .recent-list {
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .recent-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+
+        .recent-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .recent-item:hover {
+            border-color: var(--green-dim);
+            background: rgba(0, 255, 65, 0.03);
+        }
+
+        .recent-item.no-project {
+            opacity: 0.4;
+        }
+
+        .recent-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .recent-name {
+            color: var(--cyan);
+            font-size: 13px;
+            margin-bottom: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .recent-meta {
+            font-size: 10px;
+            color: var(--gray);
+        }
+
+        .recent-project-id {
+            font-size: 10px;
+            color: var(--green-dim);
+            font-family: monospace;
+        }
+
+        .btn-small {
+            padding: 5px 12px;
+            font-size: 10px;
+        }
+
+        .empty-message {
+            color: var(--gray);
+            font-size: 12px;
+            text-align: center;
+            padding: 20px;
+        }
+
+        /* ============================================
+           STREAMS GRID
+           ============================================ */
+
+        .streams-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stream-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stream-header {
+            background: var(--bg-header);
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stream-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--white);
+        }
+
+        .stream-badge {
+            font-size: 9px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: var(--bg-dark);
+            color: var(--gray);
+            border: 1px solid var(--border);
+        }
+
+        .stream-badge.active {
+            background: rgba(0, 255, 65, 0.15);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .stream-badge.receiving {
+            background: rgba(255, 176, 0, 0.15);
+            border-color: var(--amber);
+            color: var(--amber);
+        }
+
+        .stream-badge.muted {
+            background: rgba(72, 79, 88, 0.3);
+            border-color: var(--gray);
+            color: var(--gray);
+            font-style: italic;
+        }
+
+        /* Pulse animation - applied momentarily when data arrives */
+        .stream-badge.pulse {
+            animation: pulse-badge 0.3s ease-out;
+        }
+
+        @keyframes pulse-badge {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.15); box-shadow: 0 0 8px var(--green); }
+            100% { transform: scale(1); }
+        }
+
+        .stream-content {
+            height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 11px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: var(--bg-dark);
+            color: var(--green-dim);
+        }
+
+        .stream-content:empty::before {
+            content: '> Awaiting data...';
+            color: var(--gray);
+            font-style: italic;
+        }
+
+        .stream-stats {
+            padding: 6px 12px;
+            background: var(--bg-header);
+            border-top: 1px solid var(--border);
+            font-size: 10px;
+            color: var(--gray);
+            display: flex;
+            gap: 15px;
+        }
+
+        .stat-item {
+            display: flex;
+            gap: 5px;
+        }
+
+        .stat-label {
+            color: var(--gray);
+        }
+
+        .stat-value {
+            color: var(--cyan);
+        }
+
+        /* ============================================
+           LOG PANEL
+           ============================================ */
+
+        .log-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .log-header {
+            background: var(--bg-header);
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--amber);
+        }
+
+        .log-clear {
+            font-size: 10px;
+            color: var(--gray);
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .log-clear:hover {
+            color: var(--white);
+        }
+
+        .log-content {
+            height: 150px;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 11px;
+            line-height: 1.6;
+            background: var(--bg-dark);
+        }
+
+        .log-entry {
+            margin-bottom: 2px;
+        }
+
+        .log-entry .timestamp {
+            color: var(--gray);
+            margin-right: 10px;
+        }
+
+        .log-entry.info { color: var(--cyan); }
+        .log-entry.success { color: var(--green); }
+        .log-entry.error { color: var(--red); }
+        .log-entry.warn { color: var(--amber); }
+        .log-entry.event { color: var(--white); }
+
+        /* ============================================
+           PROJECT STATUS DASHBOARD
+           ============================================ */
+
+        .status-dashboard {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .status-dashboard.hidden {
+            display: none;
+        }
+
+        .dashboard-header {
+            background: var(--bg-header);
+            padding: 10px 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dashboard-title {
+            font-size: 12px;
+            color: var(--amber);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .dashboard-live-badge {
+            font-size: 9px;
+            padding: 3px 10px;
+            border-radius: 10px;
+            background: rgba(0, 255, 65, 0.15);
+            border: 1px solid var(--green);
+            color: var(--green);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            animation: pulse-live 2s infinite;
+        }
+
+        @keyframes pulse-live {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .dashboard-content {
+            padding: 15px;
+        }
+
+        .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed var(--border);
+        }
+
+        .project-id-display {
+            font-size: 11px;
+            color: var(--gray);
+        }
+
+        .project-id-display span {
+            color: var(--cyan);
+            font-family: monospace;
+        }
+
+        .project-status-badge {
+            font-size: 10px;
+            padding: 4px 12px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .project-status-badge.running {
+            background: rgba(0, 255, 65, 0.15);
+            border: 1px solid var(--green);
+            color: var(--green);
+        }
+
+        .project-status-badge.idle {
+            background: rgba(72, 79, 88, 0.3);
+            border: 1px solid var(--gray);
+            color: var(--gray);
+        }
+
+        .project-status-badge.completed {
+            background: rgba(0, 255, 255, 0.15);
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+        }
+
+        .project-status-badge.failed {
+            background: rgba(255, 51, 51, 0.15);
+            border: 1px solid var(--red);
+            color: var(--red);
+        }
+
+        /* Session Cards */
+        .sessions-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .session-card {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .session-card-header {
+            background: var(--bg-header);
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .session-id-label {
+            font-size: 10px;
+            color: var(--gray);
+        }
+
+        .session-id-label span {
+            color: var(--cyan);
+            font-family: monospace;
+        }
+
+        .session-status-badge {
+            font-size: 9px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            text-transform: uppercase;
+        }
+
+        .session-status-badge.generating {
+            background: rgba(255, 176, 0, 0.15);
+            border: 1px solid var(--amber);
+            color: var(--amber);
+        }
+
+        .session-status-badge.qa_evaluation {
+            background: rgba(0, 255, 255, 0.15);
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+        }
+
+        .session-status-badge.completed {
+            background: rgba(0, 255, 65, 0.15);
+            border: 1px solid var(--green);
+            color: var(--green);
+        }
+
+        .session-card-body {
+            padding: 12px;
+        }
+
+        /* Progress Rows */
+        .progress-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+
+        .progress-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .progress-label {
+            font-size: 10px;
+            color: var(--gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            min-width: 80px;
+        }
+
+        .progress-bar-container {
+            flex: 1;
+            height: 12px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-bar-fill.iteration {
+            background: linear-gradient(90deg, var(--green-dim), var(--green));
+        }
+
+        .progress-bar-fill.qa {
+            background: linear-gradient(90deg, var(--cyan), #00aaff);
+        }
+
+        .progress-bar-fill.score {
+            background: linear-gradient(90deg, var(--red), var(--amber), var(--green));
+        }
+
+        .progress-value {
+            font-size: 10px;
+            color: var(--white);
+            min-width: 50px;
+            text-align: right;
+        }
+
+        /* Phase Tracker */
+        .phase-tracker {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .phase-pill {
+            font-size: 9px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--gray);
+        }
+
+        .phase-pill.completed {
+            background: rgba(0, 255, 65, 0.1);
+            border-color: var(--green-dim);
+            color: var(--green);
+        }
+
+        .phase-pill.active {
+            background: rgba(255, 176, 0, 0.15);
+            border-color: var(--amber);
+            color: var(--amber);
+            animation: pulse-phase 1s infinite;
+        }
+
+        @keyframes pulse-phase {
+            0%, 100% { box-shadow: 0 0 5px rgba(255, 176, 0, 0.3); }
+            50% { box-shadow: 0 0 10px rgba(255, 176, 0, 0.6); }
+        }
+
+        .phase-pill.pending {
+            opacity: 0.4;
+        }
+
+        /* Info Sections */
+        .info-section {
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed var(--border);
+        }
+
+        .info-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .info-section-title {
+            font-size: 10px;
+            color: var(--amber);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px;
+        }
+
+        .info-item {
+            font-size: 10px;
+        }
+
+        .info-item-label {
+            color: var(--gray);
+            margin-right: 5px;
+        }
+
+        .info-item-value {
+            color: var(--cyan);
+        }
+
+        /* Model/Layer Pills */
+        .model-pills, .layer-pills {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .model-pill, .layer-pill {
+            font-size: 9px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--gray);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .model-pill.completed, .layer-pill.completed {
+            border-color: var(--green-dim);
+            color: var(--green);
+        }
+
+        .model-pill.active, .layer-pill.active {
+            border-color: var(--amber);
+            color: var(--amber);
+        }
+
+        .model-pill .status-icon, .layer-pill .status-icon {
+            font-size: 8px;
+        }
+
+        .layer-pill .score {
+            color: var(--cyan);
+            margin-left: 3px;
+        }
+
+        /* Consensus Gauge */
+        .consensus-gauge {
+            position: relative;
+            margin-top: 5px;
+        }
+
+        .gauge-bar {
+            height: 16px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            position: relative;
+            overflow: visible;
+        }
+
+        .gauge-fill {
+            height: 100%;
+            border-radius: 1px;
+            transition: width 0.3s ease;
+        }
+
+        .gauge-fill.below {
+            background: linear-gradient(90deg, var(--red), var(--amber));
+        }
+
+        .gauge-fill.above {
+            background: linear-gradient(90deg, var(--amber), var(--green));
+        }
+
+        .gauge-threshold {
+            position: absolute;
+            top: -3px;
+            bottom: -3px;
+            width: 2px;
+            background: var(--white);
+            box-shadow: 0 0 5px var(--white);
+        }
+
+        .gauge-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: var(--gray);
+            margin-top: 3px;
+        }
+
+        .gauge-current {
+            position: absolute;
+            top: -18px;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: var(--white);
+            background: var(--bg-header);
+            padding: 1px 5px;
+            border-radius: 2px;
+            border: 1px solid var(--border);
+        }
+
+        /* Gran Sabio Section */
+        .gran-sabio-status {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .gran-sabio-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+        }
+
+        .gran-sabio-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--gray);
+        }
+
+        .gran-sabio-dot.standby {
+            background: var(--gray);
+        }
+
+        .gran-sabio-dot.active {
+            background: var(--amber);
+            animation: pulse-dot 1s infinite;
+        }
+
+        .gran-sabio-model {
+            font-size: 10px;
+            color: var(--gray);
+        }
+
+        .gran-sabio-model span {
+            color: var(--cyan);
+        }
+
+        .gran-sabio-escalations {
+            font-size: 10px;
+            color: var(--gray);
+        }
+
+        .gran-sabio-escalations span {
+            color: var(--amber);
+        }
+
+        /* No sessions message */
+        .no-sessions {
+            text-align: center;
+            padding: 20px;
+            color: var(--gray);
+            font-size: 12px;
+        }
+
+        /* ============================================
+           PHASE TOGGLE SWITCH (3-way)
+           ============================================ */
+
+        .phase-toggle {
+            display: inline-flex;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 0 10px;
+        }
+
+        .toggle-segment {
+            padding: 3px 6px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-right: 1px solid var(--border);
+            background: var(--bg-dark);
+            color: var(--gray);
+            opacity: 0.5;
+            user-select: none;
+        }
+
+        .toggle-segment:last-child {
+            border-right: none;
+        }
+
+        .toggle-segment:hover:not(.active) {
+            opacity: 0.8;
+            background: var(--bg-header);
+        }
+
+        /* Active states */
+        .toggle-segment.on.active {
+            color: var(--green);
+            background: rgba(0, 255, 65, 0.15);
+            opacity: 1;
+            text-shadow: 0 0 5px var(--green);
+        }
+
+        .toggle-segment.soft.active {
+            color: var(--amber);
+            background: rgba(255, 176, 0, 0.15);
+            opacity: 1;
+            text-shadow: 0 0 5px var(--amber);
+        }
+
+        .toggle-segment.hard.active {
+            color: var(--red);
+            background: rgba(255, 51, 51, 0.15);
+            opacity: 1;
+            text-shadow: 0 0 5px var(--red);
+        }
+
+        /* Visual indicator when panel is muted */
+        .stream-panel.muted-soft .stream-content {
+            opacity: 0.3;
+        }
+
+        .stream-panel.muted-hard .stream-content {
+            opacity: 0.15;
+            background: repeating-linear-gradient(
+                45deg,
+                var(--bg-dark),
+                var(--bg-dark) 10px,
+                rgba(255, 51, 51, 0.03) 10px,
+                rgba(255, 51, 51, 0.03) 20px
+            );
+        }
+
+        .stream-panel.muted-hard .stream-header {
+            border-bottom-color: var(--red);
+            border-bottom-style: dashed;
+        }
+
+        /* ============================================
+           SCROLLBAR
+           ============================================ */
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-dark);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--gray);
+        }
+
+        /* ============================================
+           REQUEST TABS
+           ============================================ */
+
+        .request-tabs-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .request-tabs-panel .panel-header {
+            background: var(--bg-header);
+            padding: 8px 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .request-tabs-panel .panel-title {
+            font-size: 12px;
+            color: var(--amber);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tabs-navigation {
+            display: flex;
+            gap: 5px;
+        }
+
+        .tabs-nav-btn {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            color: var(--gray);
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 3px;
+            font-family: inherit;
+        }
+
+        .tabs-nav-btn:hover:not(:disabled) {
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .tabs-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .tabs-container {
+            display: flex;
+            gap: 8px;
+            padding: 10px 15px;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        /* Individual Tab */
+        .request-tab {
+            flex-shrink: 0;
+            min-width: 120px;
+            max-width: 150px;
+            padding: 8px 12px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .request-tab:hover {
+            border-color: var(--green-dim);
+        }
+
+        .request-tab.selected {
+            border-color: var(--green);
+            background: rgba(0, 255, 65, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+        }
+
+        .request-tab .tab-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+
+        .request-tab .tab-status-icon {
+            font-size: 10px;
+        }
+
+        .request-tab .tab-status-icon.completed { color: var(--green); }
+        .request-tab .tab-status-icon.active { color: var(--amber); }
+        .request-tab .tab-status-icon.pending { color: var(--gray); }
+        .request-tab .tab-status-icon.failed { color: var(--red); }
+
+        .request-tab .tab-name {
+            font-size: 11px;
+            color: var(--white);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+        }
+
+        .request-tab .tab-info {
+            font-size: 10px;
+            color: var(--cyan);
+        }
+
+        /* Overflow Button (inline with tabs) */
+        .tabs-overflow-btn {
+            flex-shrink: 0;
+            min-width: 90px;
+            padding: 8px 12px;
+            background: var(--bg-header);
+            border: 1px dashed var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            color: var(--gray);
+            font-size: 11px;
+            font-family: inherit;
+        }
+
+        .tabs-overflow-btn:hover {
+            border-color: var(--amber);
+            color: var(--amber);
+        }
+
+        /* Overflow Menu (dropdown) */
+        .tabs-overflow-menu {
+            position: absolute;
+            right: 35px;
+            top: 180px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 100;
+            min-width: 200px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .tabs-overflow-menu.hidden {
+            display: none;
+        }
+
+        .tabs-overflow-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--white);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tabs-overflow-item:last-child {
+            border-bottom: none;
+        }
+
+        .tabs-overflow-item:hover {
+            background: rgba(0, 255, 65, 0.1);
+        }
+
+        .tabs-overflow-item .overflow-status {
+            font-size: 10px;
+        }
+
+        .tabs-overflow-item .overflow-name {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Request Info Bar */
+        .request-info-bar {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .request-info-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .request-name-label {
+            font-size: 12px;
+            color: var(--amber);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .request-name-value {
+            font-size: 14px;
+            color: var(--green);
+            font-weight: bold;
+        }
+
+        .request-info-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .session-id-label {
+            font-size: 11px;
+            color: var(--gray);
+        }
+
+        .session-id-value {
+            font-size: 11px;
+            color: var(--cyan);
+            font-family: monospace;
+        }
+
+        /* ============================================
+           TAB CLOSE BUTTON (Corner Cut Reveal)
+           ============================================ */
+
+        .request-tab {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tab-close-zone {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 0;
+            background: rgba(255, 51, 51, 0.15);
+            border-left: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: width 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            overflow: hidden;
+        }
+
+        .request-tab:hover .tab-close-zone {
+            width: 28px;
+            border-left-color: var(--red);
+            box-shadow: -2px 0 8px rgba(255, 51, 51, 0.3);
+        }
+
+        .tab-close-btn {
+            color: var(--red);
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s ease, transform 0.15s ease, text-shadow 0.15s ease;
+            padding: 4px;
+            line-height: 1;
+        }
+
+        .request-tab:hover .tab-close-btn {
+            opacity: 0.7;
+        }
+
+        .tab-close-btn:hover {
+            opacity: 1 !important;
+            transform: scale(1.2);
+            text-shadow: 0 0 8px var(--red);
+        }
+
+        /* Adjust tab content to not overlap with close zone on hover */
+        .request-tab .tab-header,
+        .request-tab .tab-info {
+            transition: padding-right 0.2s ease;
+        }
+
+        .request-tab:hover .tab-header,
+        .request-tab:hover .tab-info {
+            padding-right: 24px;
+        }
+
+        /* ============================================
+           OVERVIEW TAB SPECIAL STYLES
+           ============================================ */
+
+        .request-tab.overview-tab {
+            background: var(--bg-header);
+            border-color: var(--amber);
+            min-width: 100px;
+        }
+
+        .request-tab.overview-tab:hover {
+            border-color: var(--amber);
+            background: rgba(255, 176, 0, 0.1);
+        }
+
+        .request-tab.overview-tab.selected {
+            border-color: var(--amber);
+            background: rgba(255, 176, 0, 0.15);
+            box-shadow: 0 0 10px rgba(255, 176, 0, 0.3);
+        }
+
+        .request-tab.overview-tab .tab-status-icon.overview {
+            color: var(--amber);
+        }
+
+        .request-tab.overview-tab .tab-name {
+            color: var(--amber);
+            font-weight: bold;
+        }
+
+        .request-tab.overview-tab .tab-info {
+            color: var(--gray);
+        }
+
+        /* Overview tab has no close button */
+        .request-tab.overview-tab:hover .tab-header,
+        .request-tab.overview-tab:hover .tab-info {
+            padding-right: 0;
+        }
+
+        /* Stream panel placeholder in overview mode */
+        .stream-content[data-overview-mode="true"]:empty::before {
+            content: '> Select a session tab to view stream content';
+            color: var(--gray);
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-title">/// BIOAI UNIFIED :: LIVE MATRIX ///</div>
+        <div class="header-subtitle">Real-time generation monitoring dashboard</div>
+    </div>
+
+    <div class="container">
+        <!-- Navigation Bar -->
+        <div class="nav-bar">
+            <a href="/" class="btn btn-connect btn-small">&larr; Main App</a>
+            <a href="/api-docs" class="btn btn-connect btn-small">API Docs</a>
+            <a href="/debugger" class="btn btn-connect btn-small">Debugger</a>
+        </div>
+
+        <!-- Connection Panel -->
+        <div class="connection-panel">
+            <div class="panel-header">// Connection Control</div>
+            <div class="connection-content">
+                <div class="connection-row">
+                    <div class="input-group">
+                        <label>ID:</label>
+                        <input type="text" id="projectIdInput" placeholder="Enter project ID or session ID...">
+                    </div>
+                    <button class="btn btn-connect" id="connectBtn" onclick="connect()">Connect</button>
+                    <button class="btn btn-disconnect" id="disconnectBtn" onclick="disconnect()" style="display: none;">Disconnect</button>
+                    <div class="status-indicator disconnected" id="statusIndicator">
+                        <span class="status-dot"></span>
+                        <span id="statusText">OFFLINE</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Connections -->
+        <div class="recent-panel" id="recentPanel">
+            <div class="recent-header">
+                <span class="recent-header-title">// Active Connections</span>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span class="recent-header-count" id="recentCount">Loading...</span>
+                    <button class="btn btn-connect btn-small" onclick="loadRecentProjects()">Refresh</button>
+                </div>
+            </div>
+            <div class="recent-list" id="recentList">
+                <div class="empty-message">Loading active connections...</div>
+            </div>
+        </div>
+
+        <!-- Request Tabs Panel (hidden until requests arrive) -->
+        <div class="request-tabs-panel" id="requestTabsPanel" style="display: none;">
+            <div class="panel-header">
+                <span class="panel-title">// Active Requests</span>
+                <div class="tabs-navigation">
+                    <button class="tabs-nav-btn" id="tabsNavLeft" disabled>&lt;</button>
+                    <button class="tabs-nav-btn" id="tabsNavRight" disabled>&gt;</button>
+                </div>
+            </div>
+            <div class="tabs-container" id="requestTabsContainer">
+                <!-- Tabs generated dynamically -->
+            </div>
+        </div>
+
+        <!-- Overflow Menu (separate for z-index layering) -->
+        <div class="tabs-overflow-menu hidden" id="tabsOverflowMenu">
+            <!-- Dropdown items generated dynamically -->
+        </div>
+
+        <!-- Request Info Bar -->
+        <div class="request-info-bar" id="requestInfoBar" style="display: none;">
+            <div class="request-info-left">
+                <span class="request-name-label">// Request:</span>
+                <span class="request-name-value" id="currentRequestName">-</span>
+            </div>
+            <div class="request-info-right">
+                <span class="session-id-label">Session:</span>
+                <span class="session-id-value" id="currentSessionId">-</span>
+            </div>
+        </div>
+
+        <!-- Project Status Dashboard (hidden until connected) -->
+        <div class="status-dashboard hidden" id="statusDashboard">
+            <div class="dashboard-header">
+                <span class="dashboard-title">// Project Status Panel</span>
+                <span class="dashboard-live-badge" id="dashboardLiveBadge">LIVE</span>
+            </div>
+            <div class="dashboard-content">
+                <div class="project-header">
+                    <div class="project-id-display">PROJECT: <span id="dashboardProjectId">-</span></div>
+                    <div class="project-status-badge idle" id="dashboardProjectStatus">IDLE</div>
+                </div>
+                <div class="sessions-container" id="sessionsContainer">
+                    <div class="no-sessions">No active sessions</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Streams Grid -->
+        <div class="streams-grid">
+            <!-- Generation -->
+            <div class="stream-panel" data-phase="generation">
+                <div class="stream-header">
+                    <span class="stream-title">Generation</span>
+                    <div class="phase-toggle" data-phase="generation">
+                        <span class="toggle-segment on active" data-state="on" title="Active - Receiving chunks normally">&#9673;</span>
+                        <span class="toggle-segment soft" data-state="soft" title="Soft mute - Ignoring chunks locally (still subscribed)">&#9684;</span>
+                        <span class="toggle-segment hard" data-state="hard" title="Hard mute - Will reconnect excluding this phase">&#9675;</span>
+                    </div>
+                    <span class="stream-badge" id="badge-generation">idle</span>
+                </div>
+                <div class="stream-content" id="content-generation"></div>
+                <div class="stream-stats">
+                    <div class="stat-item"><span class="stat-label">Chunks:</span><span class="stat-value" id="chunks-generation">0</span></div>
+                    <div class="stat-item"><span class="stat-label">Bytes:</span><span class="stat-value" id="bytes-generation">0</span></div>
+                </div>
+            </div>
+
+            <!-- QA -->
+            <div class="stream-panel" data-phase="qa">
+                <div class="stream-header">
+                    <span class="stream-title">QA Evaluation</span>
+                    <div class="phase-toggle" data-phase="qa">
+                        <span class="toggle-segment on active" data-state="on" title="Active - Receiving chunks normally">&#9673;</span>
+                        <span class="toggle-segment soft" data-state="soft" title="Soft mute - Ignoring chunks locally (still subscribed)">&#9684;</span>
+                        <span class="toggle-segment hard" data-state="hard" title="Hard mute - Will reconnect excluding this phase">&#9675;</span>
+                    </div>
+                    <span class="stream-badge" id="badge-qa">idle</span>
+                </div>
+                <div class="stream-content" id="content-qa"></div>
+                <div class="stream-stats">
+                    <div class="stat-item"><span class="stat-label">Chunks:</span><span class="stat-value" id="chunks-qa">0</span></div>
+                    <div class="stat-item"><span class="stat-label">Bytes:</span><span class="stat-value" id="bytes-qa">0</span></div>
+                </div>
+            </div>
+
+            <!-- Preflight -->
+            <div class="stream-panel" data-phase="preflight">
+                <div class="stream-header">
+                    <span class="stream-title">Preflight</span>
+                    <div class="phase-toggle" data-phase="preflight">
+                        <span class="toggle-segment on active" data-state="on" title="Active - Receiving chunks normally">&#9673;</span>
+                        <span class="toggle-segment soft" data-state="soft" title="Soft mute - Ignoring chunks locally (still subscribed)">&#9684;</span>
+                        <span class="toggle-segment hard" data-state="hard" title="Hard mute - Will reconnect excluding this phase">&#9675;</span>
+                    </div>
+                    <span class="stream-badge" id="badge-preflight">idle</span>
+                </div>
+                <div class="stream-content" id="content-preflight"></div>
+                <div class="stream-stats">
+                    <div class="stat-item"><span class="stat-label">Chunks:</span><span class="stat-value" id="chunks-preflight">0</span></div>
+                    <div class="stat-item"><span class="stat-label">Bytes:</span><span class="stat-value" id="bytes-preflight">0</span></div>
+                </div>
+            </div>
+
+            <!-- Consensus -->
+            <div class="stream-panel" data-phase="consensus">
+                <div class="stream-header">
+                    <span class="stream-title">Consensus</span>
+                    <div class="phase-toggle" data-phase="consensus">
+                        <span class="toggle-segment on active" data-state="on" title="Active - Receiving chunks normally">&#9673;</span>
+                        <span class="toggle-segment soft" data-state="soft" title="Soft mute - Ignoring chunks locally (still subscribed)">&#9684;</span>
+                        <span class="toggle-segment hard" data-state="hard" title="Hard mute - Will reconnect excluding this phase">&#9675;</span>
+                    </div>
+                    <span class="stream-badge" id="badge-consensus">idle</span>
+                </div>
+                <div class="stream-content" id="content-consensus"></div>
+                <div class="stream-stats">
+                    <div class="stat-item"><span class="stat-label">Chunks:</span><span class="stat-value" id="chunks-consensus">0</span></div>
+                    <div class="stat-item"><span class="stat-label">Bytes:</span><span class="stat-value" id="bytes-consensus">0</span></div>
+                </div>
+            </div>
+
+            <!-- Gran Sabio -->
+            <div class="stream-panel" data-phase="gransabio">
+                <div class="stream-header">
+                    <span class="stream-title">Gran Sabio</span>
+                    <div class="phase-toggle" data-phase="gransabio">
+                        <span class="toggle-segment on active" data-state="on" title="Active - Receiving chunks normally">&#9673;</span>
+                        <span class="toggle-segment soft" data-state="soft" title="Soft mute - Ignoring chunks locally (still subscribed)">&#9684;</span>
+                        <span class="toggle-segment hard" data-state="hard" title="Hard mute - Will reconnect excluding this phase">&#9675;</span>
+                    </div>
+                    <span class="stream-badge" id="badge-gransabio">idle</span>
+                </div>
+                <div class="stream-content" id="content-gransabio"></div>
+                <div class="stream-stats">
+                    <div class="stat-item"><span class="stat-label">Chunks:</span><span class="stat-value" id="chunks-gransabio">0</span></div>
+                    <div class="stat-item"><span class="stat-label">Bytes:</span><span class="stat-value" id="bytes-gransabio">0</span></div>
+                </div>
+            </div>
+
+            <!-- Status -->
+            <div class="stream-panel" data-phase="status">
+                <div class="stream-header">
+                    <span class="stream-title">Status</span>
+                    <div class="phase-toggle" data-phase="status">
+                        <span class="toggle-segment on active" data-state="on" title="Active - Receiving chunks normally">&#9673;</span>
+                        <span class="toggle-segment soft" data-state="soft" title="Soft mute - Ignoring chunks locally (still subscribed)">&#9684;</span>
+                        <span class="toggle-segment hard" data-state="hard" title="Hard mute - Will reconnect excluding this phase">&#9675;</span>
+                    </div>
+                    <span class="stream-badge" id="badge-status">idle</span>
+                </div>
+                <div class="stream-content" id="content-status"></div>
+                <div class="stream-stats">
+                    <div class="stat-item"><span class="stat-label">Events:</span><span class="stat-value" id="chunks-status">0</span></div>
+                    <div class="stat-item"><span class="stat-label">Bytes:</span><span class="stat-value" id="bytes-status">0</span></div>
+                </div>
+            </div>
+
+            <!-- Everything (raw unfiltered) - Only 2 states: on/soft (no hard switch) -->
+            <div class="stream-panel" data-phase="everything">
+                <div class="stream-header">
+                    <span class="stream-title">Everything (Raw)</span>
+                    <div class="phase-toggle" data-phase="everything">
+                        <span class="toggle-segment on active" data-state="on" title="Active - Showing all raw data">&#9673;</span>
+                        <span class="toggle-segment soft" data-state="soft" title="Muted - Ignoring output to prevent lag">&#9684;</span>
+                    </div>
+                    <span class="stream-badge" id="badge-everything">idle</span>
+                </div>
+                <div class="stream-content" id="content-everything"></div>
+                <div class="stream-stats">
+                    <div class="stat-item"><span class="stat-label">Events:</span><span class="stat-value" id="chunks-everything">0</span></div>
+                    <div class="stat-item"><span class="stat-label">Bytes:</span><span class="stat-value" id="bytes-everything">0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Log Panel -->
+        <div class="log-panel">
+            <div class="log-header">
+                <span class="log-title">// Event Log</span>
+                <span class="log-clear" onclick="clearLog()">Clear</span>
+            </div>
+            <div class="log-content" id="logContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/stream_monitor.js"></script>
+</body>
+</html>

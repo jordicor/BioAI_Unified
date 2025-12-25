@@ -1,0 +1,111 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Session data
+sessions/
+*.session
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+NDH6SA~M
+
+# Environment and secrets
+.env
+.env.local
+.env.production
+.env.*.local
+
+*.bat
+
+# Claude Code local config
+.claude/
+
+# User data (contains personal uploads)
+data/users/
+
+# Generated tracking data (keep folder structure with .gitkeep)
+data/tracking/*.json
+
+# Backups
+backups/
+*.bak
+
+# Test outputs and development tests
+test_outputs/
+dev_tests/
+docs/
+*.test
+
+# Database files
+*.db
+*.sqlite
+*.db-shm
+*.db-wal
+
+# API response cache
+cache/
+*.cache
+
+# Documents (exclude all, keep essential files)
+*.txt
+*.md
+*.pdf
+!**/README.md
+!CLAUDE.md
+!requirements.txt
+!core/trusted_proxies.txt
+
+# Specific files to exclude
+pgbench_test.ps1
+
+# Windows null device
+nul
+
+# Biography App (separate repository)
+#biography_app#/

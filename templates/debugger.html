@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BioAI Unified Debugger</title>
+    <link rel="stylesheet" href="/static/debugger.css">
+</head>
+<body data-project-id="{{ project_id or '' }}">
+    <div id="app">
+        <header>
+            <h1>BioAI Debugger</h1>
+            <div class="controls">
+                <button id="refresh-sessions">Refresh Sessions</button>
+                <input type="text" id="project-filter" placeholder="Filter by project id..." value="{{ project_id or '' }}">
+                <input type="text" id="session-filter" placeholder="Filter by session id or request name...">
+            </div>
+        </header>
+        <main>
+            <section id="session-panel">
+                <h2>Sessions</h2>
+                <ul id="session-list"></ul>
+            </section>
+            <section id="details-panel">
+                <div id="session-meta">
+                    <h2 id="session-title">Select a session</h2>
+                    <div id="session-summary"></div>
+                </div>
+                <div id="session-body">
+                    <section>
+                        <h3>Request</h3>
+                        <textarea id="request-data" readonly></textarea>
+                    </section>
+                    <section>
+                        <h3>Preflight</h3>
+                        <textarea id="preflight-data" readonly></textarea>
+                    </section>
+                    <section>
+                        <h3>Final Result</h3>
+                        <textarea id="final-data" readonly></textarea>
+                    </section>
+                    <section>
+                        <h3>Usage / Costs</h3>
+                        <textarea id="usage-data" readonly></textarea>
+                    </section>
+                </div>
+                <div id="events-panel">
+                    <h2>Events</h2>
+                    <div id="events-list"></div>
+                    <button id="load-more-events" class="hidden">Load More</button>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="/static/debugger.js"></script>
+</body>
+</html>

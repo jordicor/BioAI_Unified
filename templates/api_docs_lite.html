@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BioAI Unified Engine API (Lite)</title>
+</head>
+<body>
+<main class="docs-content">
+<section id="overview" class="docs-section">
+  <h1 class="docs-heading">BioAI Unified Engine API</h1>
+  <p>Advanced content generation API with multi-layer quality assurance and consensus-based approval system.</p>
+</section>
+
+<section id="authentication" class="docs-section">
+  <h2 class="docs-subheading">Authentication</h2>
+  <p>The BioAI Unified Engine is currently configured for internal use. No API keys are required for client requests.</p>
+</section>
+
+<section id="base-url" class="docs-section">
+  <h2 class="docs-subheading">Base URL</h2>
+  <p>The server runs on port 8000 by default. Update the host and port in your configuration as needed.</p>
+</section>
+
+<section id="generate" class="docs-section">
+  <h2 class="docs-subheading">Generate Content</h2>
+  <p>Initiates content generation with multi-layer QA evaluation. Returns a session ID for tracking progress.</p>
+  <p>JSON Retry Mode: When json_retry_without_iteration is true, JSON validation errors trigger automatic retries that do not consume the main iteration count. The number of retries is controlled by the MAX_JSON_RETRY_ATTEMPTS env...</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">prompt</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Content generation prompt (minimum 10 characters)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">request_name</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Optional descriptive name for this request (max 128 chars). Returned in all responses and streaming events (e.g., "LinkedIn Article", "School Essay")</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">content_type</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Type of content: biography, script, novel, article, essay, technical, creative</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">json_output</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Set to true to request JSON-formatted output (with guard validation) while keeping the declared content_type</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">json_retry_without_iteration</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">When true, JSON validation errors trigger retries that do NOT consume main iterations. Controlled by MAX_JSON_RETRY_ATTEMPTS env var (default: 2 retries)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">json_schema</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Optional JSON Schema for structured outputs with 100% format guarantee (requires json_output=true). Supported by Grok, Gemini, Claude 4.5/Opus 4.1, GPT-4o, GPT-5, O1/O3, Mistral.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">json_expectations</div>
+      <div class="param-type">array</div>
+      <div class="param-desc">Optional path-based validation rules for specific JSON fields (requires json_output=true). Validates only specified fields without defining complete structure.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">project_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Optional project identifier (≤128 chars) to group related sessions. Reuse the value returned from a previous negotiation.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">request_project_id</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">When true (alias: get_project_id), instructs the API to allocate a project_id if one is not provided.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">generator_model</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">AI model for generation (default: gpt-4o)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">temperature</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Generation temperature 0.0-2.0 (default: 0.7)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_tokens</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum tokens for generation (default: 4000, ignored if max_tokens_percentage is specified)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_tokens_percentage</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Use X% of model's maximum available tokens (1-100). Takes precedence over max_tokens. With safety margin of 95%.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_words</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Minimum words for generation (optional)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_words</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum words for generation (takes precedence over max_tokens)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">language</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Language hint (ISO 639-1 or locale code, e.g., "es", "en-US"). Propagates to lexical diversity and phrase frequency analysis.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">reasoning_effort</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Reasoning effort level for GPT-5 models: "none", "low", "medium", "high" (optional)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">thinking_budget_tokens</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Budget tokens for thinking/reasoning (minimum 1024, for Claude 3.7/4 models)</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">source_text</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Original source text for QA validation (interviews, reference material, etc.).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">username</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">User identifier required when referencing attachments via context_documents.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">context_documents</div>
+      <div class="param-type">array</div>
+      <div class="param-desc">List of attachments to expose as contextual documents. Each item: upload_id, username, optional intended_usage.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">cumulative_text</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Previously generated chapters for cumulative repetition analysis.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">cumulative_word_count</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Total word count of cumulative_text for ratio-based repetition analysis.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">word_count_enforcement</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Word count enforcement configuration. Requires min_words and/or max_words to be set.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">enabled</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enable strict word count validation.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">flexibility_percent</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Allowed deviation percentage (0-100). Required when enabled=true.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">direction</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Flexibility direction: "both", "more", "less".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">severity</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Enforcement severity: "important" or "deal_breaker".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">target_field</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Optional JSON field to count words in (e.g., "generated_text", "data.content"). Supports dot notation.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">qa_models</div>
+      <div class="param-type">array</div>
+      <div class="param-desc">List of AI models for QA evaluation (strings or QAModelConfig objects).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">qa_global_config</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Global configuration applied to all QA models (max_tokens, reasoning_effort, thinking_budget_tokens, temperature).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">qa_models_config</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Per-model QA configuration by model name: {"model": { "reasoning_effort": "...", "max_tokens": ...}}.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name required">qa_layers</div>
+      <div class="param-type">array</div>
+      <div class="param-desc">QA evaluation layers configuration. Use [] to bypass QA and preflight validation completely.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_global_score</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Minimum global average score 0.0-10.0 (default: 8.0).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_iterations</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum generation iterations (default: 5).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_consecutive_smart_edits</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum incremental edit passes before forcing a full regeneration (default: 10).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">gran_sabio_model</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Model for Gran Sabio escalation (default: claude-opus-4-1-20250805).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">gran_sabio_fallback</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Allow Gran Sabio to regenerate content when iterations are exhausted (default: false).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">gran_sabio_call_limit_per_iteration</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Max Gran Sabio escalations per iteration. -1 for unlimited.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">gran_sabio_call_limit_per_session</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Max Gran Sabio escalations per entire session. -1 for unlimited.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">verbose</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enable verbose progress tracking (default: true).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">show_query_costs</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Token usage and cost reporting: 0=disabled, 1=summary, 2=detailed.</div>
+    </div>
+  </div>
+</section>
+
+<section id="qa-bypass" class="docs-section">
+  <h2 class="docs-subheading">🚀 QA Bypass Mode</h2>
+  <p>For rapid content generation without quality evaluation, you can completely bypass QA evaluation and preflight validation by sending an empty qa_layers array.</p>
+  <p>❌ Avoid for: Production content, factual accuracy requirements, editorial standards</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">qa_layers</div>
+      <div class="param-type">array</div>
+      <div class="param-desc">Empty array [] fully disables QA and preflight validation.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_iterations</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Usually set to 1 when QA is bypassed.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_tokens_percentage</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Optional dynamic token allocation even in bypass mode.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">status</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Final status still returned as "completed" with qa_result.bypassed=true.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">qa_result.global_score</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Set to 10.0 in bypass mode.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">recommended_timeout_seconds</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Can still be used as minimum timeout even without QA.</div>
+    </div>
+  </div>
+</section>
+
+<section id="status" class="docs-section">
+  <h2 class="docs-subheading">Check Generation Status</h2>
+  <p>Get the current status of a content generation session.</p>
+  <p>When project grouping is in use, the payload includes the project_id that owns the session.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">session_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Session identifier returned from /generate.</div>
+    </div>
+  </div>
+</section>
+
+<section id="stream" class="docs-section">
+  <h2 class="docs-subheading">Stream Real-time Progress</h2>
+  <p>Stream real-time progress updates for a generation session using Server-Sent Events (SSE).</p>
+  <p>Each progress message mirrors the session metadata, including project_id when the session belongs to a negotiated project.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">session_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Session identifier returned from /generate.</div>
+    </div>
+  </div>
+</section>
+
+<section id="stream-project-unified" class="docs-section">
+  <h2 class="docs-subheading">Unified Project Stream (SSE)</h2>
+  <p>GET /stream/project/{project_id} - Stream real-time events for all sessions under a project using Server-Sent Events (SSE). Select which phases to receive via query parameter.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">project_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">The project identifier (max 128 chars).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">phases</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">CSV of phases to subscribe: preflight, generation, qa, consensus, gransabio/gran_sabio, status, or "all" (default).</div>
+    </div>
+  </div>
+  <h3>Available Phases</h3>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">preflight</div>
+      <div class="param-type">phase</div>
+      <div class="param-desc">Preflight validation chunks</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">generation</div>
+      <div class="param-type">phase</div>
+      <div class="param-desc">Content generation chunks</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">qa</div>
+      <div class="param-type">phase</div>
+      <div class="param-desc">QA evaluation chunks</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">consensus</div>
+      <div class="param-type">phase</div>
+      <div class="param-desc">Consensus calculation updates</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">gransabio / gran_sabio</div>
+      <div class="param-type">phase</div>
+      <div class="param-desc">Gran Sabio review/regeneration chunks</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">status</div>
+      <div class="param-type">phase</div>
+      <div class="param-desc">Aggregated status updates with initial snapshot</div>
+    </div>
+  </div>
+  <h3>Behavior</h3>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">All events include "phase"</div>
+      <div class="param-type">feature</div>
+      <div class="param-desc">Every event has a "phase" field for easy client-side filtering.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">Initial status_snapshot</div>
+      <div class="param-type">feature</div>
+      <div class="param-desc">If "status" is included, sends current project state after connection.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">Heartbeat</div>
+      <div class="param-type">feature</div>
+      <div class="param-desc">SSE comment ": heartbeat" every 15 seconds keeps connection alive.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">Immediate close</div>
+      <div class="param-type">feature</div>
+      <div class="param-desc">On cancel or stream_end, closes immediately without draining queues.</div>
+    </div>
+  </div>
+  <h3>Event Types</h3>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">connected</div>
+      <div class="param-type">event</div>
+      <div class="param-desc">Initial connection confirmation with subscribed_phases list.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">status_snapshot</div>
+      <div class="param-type">event</div>
+      <div class="param-desc">Current project state (only if "status" phase requested).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">chunk</div>
+      <div class="param-type">event</div>
+      <div class="param-desc">Content chunk from any subscribed content phase.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">status_change</div>
+      <div class="param-type">event</div>
+      <div class="param-desc">Session state changed (status, phase, iteration, QA progress).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">session_end</div>
+      <div class="param-type">event</div>
+      <div class="param-desc">A session within the project completed or failed.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">stream_end</div>
+      <div class="param-type">event</div>
+      <div class="param-desc">Stream closing (project ended or cancelled). Always includes "reason".</div>
+    </div>
+  </div>
+  <h3>Examples</h3>
+  <p><code>/stream/project/abc123</code> - All phases (default)</p>
+  <p><code>/stream/project/abc123?phases=generation,qa</code> - Only generation and QA chunks</p>
+  <p><code>/stream/project/abc123?phases=status</code> - Status updates only (control panel)</p>
+  <h3>Errors</h3>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">400</div>
+      <div class="param-type">error</div>
+      <div class="param-desc">Invalid project_id or invalid phase names.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">503</div>
+      <div class="param-type">error</div>
+      <div class="param-desc">Unable to subscribe to any requested phase.</div>
+    </div>
+  </div>
+</section>
+
+<section id="result" class="docs-section">
+  <h2 class="docs-subheading">Get Final Result</h2>
+  <p>Get the final result of a completed generation session.</p>
+  <p>The response mirrors the original request metadata, including project_id when the session is part of a grouped project.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">session_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Session identifier returned from /generate.</div>
+    </div>
+  </div>
+</section>
+
+<section id="stop" class="docs-section">
+  <h2 class="docs-subheading">Stop Generation Session</h2>
+  <p>Cancel an active content generation session immediately. Stops the generation process and marks the session as cancelled.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">session_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">The unique session identifier returned from /generate.</div>
+    </div>
+  </div>
+</section>
+
+<section id="project-start" class="docs-section">
+  <h2 class="docs-subheading">Start/Reactivate Project</h2>
+  <p>Activate or reactivate a project to accept new generation requests. Use after stopping a project to resume operations.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">project_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">The project identifier used to group related sessions.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">was_cancelled</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Response field: true if project was previously cancelled, false if already active.</div>
+    </div>
+  </div>
+</section>
+
+<section id="project-stop" class="docs-section">
+  <h2 class="docs-subheading">Stop Project</h2>
+  <p>Cancel all active sessions belonging to a project and reject new generation requests until reactivated. Useful for "Stop All" functionality.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">project_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">The project identifier used to group related sessions.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">sessions_cancelled</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Response field: number of active sessions that were cancelled.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">HTTP 403</div>
+      <div class="param-type">error</div>
+      <div class="param-desc">After stopping, new /generate requests with this project_id are rejected until /project/start is called.</div>
+    </div>
+  </div>
+</section>
+
+<section id="project-status" class="docs-section">
+  <h2 class="docs-subheading">Project Status (Control Panel)</h2>
+  <p>GET /status/project/{project_id} - Get the current status of all sessions belonging to a project. Designed for building "control panel" UIs.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">project_id</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">The project identifier (max 128 chars).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">status</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Overall project status: "idle", "running", "completed", "failed", "cancelled".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">sessions[]</div>
+      <div class="param-type">array</div>
+      <div class="param-desc">List of session objects with session_id, status, phase, iteration, max_iterations, started_at.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">sessions[].generation</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Generation info: model, content_length, word_count.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">sessions[].qa</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">QA tracking: models[], layers[], current_model, current_layer, progress{completed, total}.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">sessions[].consensus</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Consensus info: last_score, min_required, approved.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">sessions[].gran_sabio</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Gran Sabio info: active, model, escalation_count.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">summary</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Aggregate counts: total_sessions, active_sessions, completed_sessions.</div>
+    </div>
+  </div>
+  <p>Use this endpoint for periodic status snapshots (dashboard refresh). For real-time updates, use the unified stream endpoint: /stream/project/{id}?phases=status (status only) or /stream/project/{id} (all phases).</p>
+</section>
+
+
+<section id="models" class="docs-section">
+  <h2 class="docs-subheading">Available Models</h2>
+  <p>Get list of available AI models with their specifications and capabilities.</p>
+</section>
+
+<section id="analytics" class="docs-section">
+  <h2 class="docs-subheading">Analytics Dashboard</h2>
+  <p>Get comprehensive deal-breaker tracking analytics including escalation statistics and model reliability metrics.</p>
+</section>
+
+<section id="analytics-model" class="docs-section">
+  <h2 class="docs-subheading">Model Analytics</h2>
+  <p>Get detailed reliability statistics for a specific QA model.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">model_name</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">The name of the QA model (e.g., "gpt-5-mini", "claude-sonnet-4-20250514").</div>
+    </div>
+  </div>
+</section>
+
+<section id="analysis-lexical-diversity" class="docs-section">
+  <h2 class="docs-subheading">Lexical Diversity Analysis</h2>
+  <p>Analyze text for vocabulary richness and lexical diversity using multiple statistical metrics.</p>
+  <p>Returns GREEN/AMBER/RED grades based on configurable thresholds. Can optionally analyze only a specific JSON field via target_field.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">text</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Text to analyze (min length: 1).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">tokenizer</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Tokenization mode: "word_punct" (default) or "alnum".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">lowercase</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Convert tokens to lowercase (default: true).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">metrics</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">"auto", "all", or CSV like "mtld,hdd,yulek" (default: "auto").</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">top_words</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Top K most frequent words (0=disabled, default: 0).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">target_field</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Optional JSON field to analyze (e.g., "generated_text", "data.content"). Dot notation supported.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">analyze_windows</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enable window-based analysis (default: false).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">window_mode</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">"tokens" for sliding windows, "paragraphs" for paragraph-based (default: "tokens").</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">thresholds</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Custom boundaries for GREEN/AMBER/RED per metric.</div>
+    </div>
+  </div>
+</section>
+
+<section id="analysis-repetition" class="docs-section">
+  <h2 class="docs-subheading">Repetition Analysis</h2>
+  <p>Analyze exact n-gram repetition patterns with clustering, diagnostics, and positional bias detection.</p>
+  <p>Useful for detecting over-repetition, dense clusters, and phrase positioning anomalies.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">text</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Text to analyze (min length: 1).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_n</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Minimum n-gram length (default: 2).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_n</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum n-gram length (default: 5).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_count</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Minimum occurrences to report (default: 2).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">diagnostics</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">"off" (default), "basic", or "full".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">enable_clusters</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enable cluster computation (default: false).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">enable_position_metrics</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enable positional bias analysis (default: false).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">algo_mode</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">"auto" (default), "counter", or "multiprocess".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">pos_bias_threshold</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Optional bias threshold (e.g., 0.60) for positional diagnostics.</div>
+    </div>
+  </div>
+</section>
+
+<section id="analysis-health" class="docs-section">
+  <h2 class="docs-subheading">Analysis Health Check</h2>
+  <p>Verify that the analysis endpoints are operational and available.</p>
+</section>
+
+<section id="project-handshake" class="docs-section">
+  <h2 class="docs-subheading">Project Grouping (Optional)</h2>
+  <p>Associate multiple sessions with a single workflow using project_id; can be reserved via POST /project/new or allocated inline with request_project_id.</p>
+  <p>The identifier appears in /generate, /status, /stream, /result, and debugger views.</p>
+</section>
+
+<section id="usage-cost-tracking" class="docs-section">
+  <h2 class="docs-subheading">Usage &amp; Cost Tracking</h2>
+  <p>Provides token usage and cost tracking across generation, QA, preflight, and Gran Sabio phases, controlled by show_query_costs.</p>
+  <p>Costs normalized to USD and can be embedded in JSON or text outputs.</p>
+</section>
+
+<section id="preflight-validation" class="docs-section">
+  <h2 class="docs-subheading">Preflight Validation System</h2>
+  <p>Analyzes request feasibility before starting generation to prevent resource waste on impossible or contradictory requests.</p>
+  <p>Outputs decision, user_feedback, and issues with severity information.</p>
+</section>
+
+<section id="context-source-text" class="docs-section">
+  <h2 class="docs-subheading">Context &amp; Source Text</h2>
+  <p>Supports direct source_text, attachments (POST /attachments, /attachments/base64, /attachments/url), and cumulative_text for repetition analysis.</p>
+  <p>Attachments are associated with username and retrieved via upload_id; context_documents link them into generation.</p>
+</section>
+
+<section id="connection-stability" class="docs-section">
+  <h2 class="docs-subheading">Connection Stability &amp; Long-Running Operations</h2>
+  <p>Implements SSE heartbeats and JSON heartbeat messages to keep connections alive during long-running reasoning operations.</p>
+  <p>recommended_timeout_seconds is computed from per-iteration budget, max_iterations, and QA/Gran Sabio padding.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">recommended_timeout_seconds</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Suggested minimum client timeout based on config.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">heartbeat_interval</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Internal SSE/JSON heartbeat interval (≈15s).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">thinking_status</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Verbose_log entries describing reasoning progress.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">proxy_read_timeout</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Recommended proxy timeout (e.g., 180s or higher).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">reasoning_effort_time_budgets</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Baseline seconds per iteration for none/low/medium/high reasoning.</div>
+    </div>
+  </div>
+</section>
+
+<section id="reasoning-models" class="docs-section">
+  <h2 class="docs-subheading">Reasoning Models &amp; Thinking Tokens</h2>
+  <p>Supports advanced reasoning models (GPT-5, O1, O3, Claude thinking) with reasoning_effort or thinking_budget_tokens.</p>
+  <p>Higher effort or larger thinking budgets increase quality and latency; thinking tokens are billed as output tokens.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">reasoning_effort</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">For GPT-5/O1/O3: "none", "low", "medium", "high".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">thinking_budget_tokens</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">For Claude models: min 1024, typical 4000-8000, up to 16000+.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">generator_model</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Must be a reasoning-capable model to use these fields.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">temperature</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Standard temperature parameter used alongside reasoning.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_tokens</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Max output tokens for reasoning model response.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">gran_sabio_model</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Uses high-level reasoning models by default for escalations.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">qa_models_config[*].reasoning_effort</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Per-QA-model reasoning configuration.</div>
+    </div>
+  </div>
+</section>
+
+<section id="qa-layers" class="docs-section">
+  <h2 class="docs-subheading">QA Layers Configuration</h2>
+  <p>QA layers define evaluation criteria for content quality; each layer is evaluated by multiple models.</p>
+  <p>Algorithmic layers (Word Count Enforcement, Lexical Diversity Guard, Phrase Frequency Guard) can be injected automatically.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">name</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Name of the QA layer.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name required">description</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Description of what the layer evaluates.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name required">criteria</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Specific evaluation criteria.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_score</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Minimum score for this layer (default: 7.0).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">is_mandatory</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Whether this layer must pass after max_iterations or trigger rejection.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">deal_breaker_criteria</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Specific deal-breaker patterns (e.g., "invents facts", "offensive language"). Minority or tie triggers Gran Sabio.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">concise_on_pass</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">If true, concise feedback when score ≥ min_score (default: true).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">order</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Evaluation order (default: 1).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">is_deal_breaker</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Deprecated; use deal_breaker_criteria instead.</div>
+    </div>
+  </div>
+</section>
+
+<section id="qa-models-reasoning" class="docs-section">
+  <h2 class="docs-subheading">QA Models with Reasoning/Thinking</h2>
+  <p>QA evaluation models can use advanced reasoning just like generator models, configured via qa_models, qa_global_config and qa_models_config.</p>
+  <p>Configuration priority: inline QAModelConfig, then qa_models_config, then qa_global_config, then system defaults.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">model</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Model identifier (e.g., "gpt-5-mini", "claude-opus-4").</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_tokens</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum tokens for QA evaluation (default: 8000).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">reasoning_effort</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">For GPT-5/O1/O3 models: "none", "low", "medium", "high".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">thinking_budget_tokens</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">For Claude models: thinking budget (min: 1024).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">temperature</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Temperature for QA evaluation (default: 0.3).</div>
+    </div>
+  </div>
+</section>
+
+<section id="smart-editing" class="docs-section">
+  <h2 class="docs-subheading">Smart Editing Workflow</h2>
+  <p>Smart Content Editor applies targeted paragraph edits instead of regenerating the entire document when QA detects localized issues.</p>
+  <p>Controlled by max_consecutive_smart_edits; edited drafts still pass through full QA each iteration.</p>
+</section>
+
+<section id="gran-sabio-escalation" class="docs-section">
+  <h2 class="docs-subheading">Gran Sabio Escalation System</h2>
+  <p>Gran Sabio is the final arbiter for deal-breaker resolution; minority/tie deal-breakers trigger immediate escalation.</p>
+  <p>Escalations are limited per iteration/session and tracked with decisions like real/false_positive.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">gran_sabio_call_limit_per_iteration</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum escalations per iteration (default: 3, -1 for unlimited).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">gran_sabio_call_limit_per_session</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum escalations per session (default: 15, -1 for unlimited).</div>
+    </div>
+  </div>
+</section>
+
+<section id="word-count-enforcement" class="docs-section">
+  <h2 class="docs-subheading">Word Count Enforcement</h2>
+  <p>Strict validation of content length with configurable flexibility margins; injected as a QA layer.</p>
+  <p>Can count words either on full content or a specific JSON field via target_field.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">enabled</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enable word count enforcement; requires min_words and/or max_words in the request.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name required">flexibility_percent</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Allowed deviation percentage (0-100).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">direction</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">"both" (default), "more", or "less".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">severity</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">"important" (default) or "deal_breaker".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">target_field</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Optional JSON field to count words in; if missing/invalid, falls back to whole content.</div>
+    </div>
+  </div>
+</section>
+
+<section id="phrase-frequency-guard" class="docs-section">
+  <h2 class="docs-subheading">Phrase Frequency Guard</h2>
+  <p>Executes repetition analyzer to detect excessively repeated phrases; auto-injected QA layer after word count.</p>
+  <p>Findings are stored per iteration and can be used to guide rewrites.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name required">enabled</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enables phrase frequency guard; requires at least one rule.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_n / max_n</div>
+      <div class="param-type">integer | null</div>
+      <div class="param-desc">Global range of n-grams to analyze; if omitted, derived from rules.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_count</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Minimum frequency to include a phrase (default: 2).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">mp_threshold_tokens</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Token threshold to switch to multiprocess algorithm (default: 50000).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">workers</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Workers for multiprocess (0 = auto).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">summary_top_k</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Number of phrases per n included in summary.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">diagnostics_*</div>
+      <div class="param-type">various</div>
+      <div class="param-desc">Optional parameters to enable math reports (density, distances, etc.).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">target_field</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Optional JSON field to analyze for repetition (dot notation supported).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">rules[*].name</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Unique rule identifier.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">rules[*].min_length / max_length</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Minimum and maximum length in tokens; inferred from phrase if given.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">rules[*].max_repetitions</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum allowed occurrences before triggering the rule.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">rules[*].phrase</div>
+      <div class="param-type">string | null</div>
+      <div class="param-desc">Exact phrase to monitor; if omitted, applies to any phrase in the length range.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">rules[*].severity</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">"warn" or "deal_breaker".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">rules[*].guidance</div>
+      <div class="param-type">string | null</div>
+      <div class="param-desc">Optional guidance string appended to feedback.</div>
+    </div>
+  </div>
+</section>
+
+<section id="lexical-diversity-guard" class="docs-section">
+  <h2 class="docs-subheading">Lexical Diversity Guard</h2>
+  <p>Measures vocabulary variety (MTLD, HD-D, Herdan's C, Yule's K, etc.) and injects top repeated words/windows into the next generator prompt on low diversity.</p>
+  <p>Runs in the QA bypass engine, avoiding extra QA model calls; deal-breaker policy and scoring are configurable.</p>
+</section>
+
+<section id="json-schema-structured-outputs" class="docs-section">
+  <h2 class="docs-subheading">JSON Schema Structured Outputs</h2>
+  <p>Enables 100% format-compliant JSON outputs via json_schema and provider-native structured-output mechanisms.</p>
+  <p>Supports Grok, Gemini, Claude 4.5/Opus 4.1, GPT-4o, GPT-5, O1/O3, Mistral, with provider-specific wiring under the hood.</p>
+</section>
+
+<section id="json-validation-comparison" class="docs-section">
+  <h2 class="docs-subheading">JSON Validation: Schema vs Expectations</h2>
+  <p>Understand the differences between json_schema and json_expectations to choose the right validation approach.</p>
+  <p>The API provides two distinct methods that can be used independently or combined.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">json_schema</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Full JSON Schema sent to the model to constrain generation and used for full-structure validation.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">json_expectations</div>
+      <div class="param-type">array</div>
+      <div class="param-desc">List of expectation rules applied post-generation; not sent to the model.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name required">path</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">JSONPath to the field (e.g., $.user.email, $.items[*].id).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">required</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Whether the field must exist (default true).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">type</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Expected data type: "string", "integer", "number", "boolean", "array", "object".</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">equals</div>
+      <div class="param-type">any</div>
+      <div class="param-desc">Exact value match constraint.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">in</div>
+      <div class="param-type">array</div>
+      <div class="param-desc">Value must be in this list (enum-style).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">pattern</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Regex pattern for string validation.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_length / max_length</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Length constraints for strings/arrays.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_items / max_items</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Size constraints for arrays.</div>
+    </div>
+  </div>
+</section>
+
+<section id="json-retry" class="docs-section">
+  <h2 class="docs-subheading">JSON Retry Mode</h2>
+  <p>Automatic JSON error recovery without consuming your main iteration count.</p>
+  <p>Validation failures can be retried with structural error context up to MAX_JSON_RETRY_ATTEMPTS per iteration.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">json_retry_without_iteration</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enable JSON retry mode (default: false).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">MAX_JSON_RETRY_ATTEMPTS</div>
+      <div class="param-type">env var</div>
+      <div class="param-desc">Environment variable controlling retry attempts per iteration (default: 2).</div>
+    </div>
+  </div>
+</section>
+
+<section id="error-handling" class="docs-section">
+  <h2 class="docs-subheading">Error Handling</h2>
+  <p>Uses standard HTTP codes (200, 400, 404, 500) and a JSON error format with detail field.</p>
+  <p>When json_output is enabled, json_guard_history tracks validation attempts; JSON retry mode modifies iteration consumption semantics.</p>
+</section>
+
+<section id="examples" class="docs-section">
+  <h2 class="docs-subheading">Complete Examples</h2>
+</section>
+
+<section id="generation-statuses" class="docs-section">
+  <h2 class="docs-subheading">Generation Statuses</h2>
+  <p>Understanding the different stages of content generation:</p>
+  <p>Session created, preparing for generation</p>
+</section>
+</main>
+</body>
+</html>
