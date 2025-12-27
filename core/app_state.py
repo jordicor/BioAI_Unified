@@ -198,6 +198,7 @@ project_status_streams: Dict[str, List[asyncio.Queue[str]]] = {}
 project_status_streams_lock: Optional[asyncio.Lock] = None
 
 
+
 def _serialize_for_debug(value: Any) -> Any:
     """Convert complex objects into JSON-serializable structures for debugger."""
     if value is None:

@@ -367,111 +367,86 @@
   font-weight: 600;
 }
 
-/* Content Streaming */
-.streaming-section {
+/* Waiting Section - Shown during generation */
+.waiting-section {
   background: var(--bg-panel);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-
-.streaming-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-4) var(--space-6);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-light);
-}
-
-.streaming-controls {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.content-stream-container {
-  height: 400px;
-  overflow-y: auto;
-}
-
-.content-stream {
-  padding: var(--space-6);
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-
-.stream-placeholder {
-  color: var(--text-muted);
-  font-style: italic;
-  text-align: center;
   padding: var(--space-12) var(--space-6);
-}
-
-/* QA Feedback Panel */
-.qa-feedback-section {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-
-.qa-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-4) var(--space-6);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-light);
-}
-
-.qa-panels {
-  padding: var(--space-6);
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.qa-placeholder {
-  color: var(--text-muted);
-  font-style: italic;
   text-align: center;
-  padding: var(--space-8) var(--space-6);
-}
-
-/* Process Log */
-.log-section {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
 
-.log-header {
+.waiting-content {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.waiting-icon {
+  font-size: 2rem;
+  color: var(--accent-blue);
+  margin-bottom: var(--space-4);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.waiting-text {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+
+.waiting-hint {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.waiting-hint strong {
+  color: var(--accent-blue);
+}
+
+/* Result Status Badge */
+.results-title-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: var(--space-4) var(--space-6);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-light);
+  gap: var(--space-4);
 }
 
-.log-container.collapsed {
-  display: none;
-}
-
-.log-container {
-  max-height: 200px;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-6);
-  background: var(--bg-secondary);
+.result-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 600;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  line-height: 1.5;
+}
+
+.result-status-badge.approved {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success);
+}
+
+.result-status-badge.rejected {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid var(--error);
+}
+
+.result-status-badge.cancelled {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning);
+}
+
+.result-status-badge .status-icon {
+  font-weight: 700;
 }
 
 /* Final Results */
@@ -605,75 +580,6 @@
 .template-btn:hover:not(.active) {
   background: var(--bg-accent);
   color: var(--text-primary);
-}
-
-/* QA Feedback Styles */
-.qa-feedback-item {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-  margin-bottom: var(--space-3);
-}
-
-.qa-layer-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-2);
-}
-
-.qa-layer-name {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.qa-score {
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: var(--font-mono);
-}
-
-.qa-score.good {
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.qa-score.warning {
-  background: var(--warning-bg);
-  color: var(--warning);
-}
-
-.qa-feedback-text {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  line-height: 1.5;
-}
-
-.qa-deal-breaker {
-  background: var(--error-bg);
-  color: var(--error);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-align: center;
-  margin-top: var(--space-3);
-  text-transform: uppercase;
-}
-
-/* Process Log Styles */
-.log-entry {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-bottom: var(--space-1);
-  font-family: var(--font-mono);
-}
-
-.log-entry:last-child {
-  margin-bottom: 0;
 }
 
 /* Progress Bar Animation */

@@ -161,7 +161,7 @@ When creating new test files, always place them in `dev_tests/` to keep the root
 Core endpoints follow RESTful patterns:
 - `POST /generate` - Start content generation with preflight validation (returns session_id and preflight_feedback)
 - `GET /status/{session_id}` - Get current status
-- `GET /stream/{session_id}` - Real-time progress stream
+- `GET /stream/project/{project_id}` - Real-time progress stream (unified: project_id = session_id when not explicitly provided)
 - `GET /result/{session_id}` - Final approved content
 - `POST /stop/{session_id}` - Cancel/stop active content generation session
 - `GET /models` - Available AI models with specifications

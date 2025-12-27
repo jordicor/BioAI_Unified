@@ -460,56 +460,26 @@
                         </div>
                     </div>
                 </div>
-                
-                <!-- Live Content Streaming -->
-                <div class="streaming-section">
-                    <div class="streaming-header">
-                        <h3 class="section-title">Generated Content</h3>
-                        <div class="streaming-controls">
-                            <button type="button" id="pauseStreamBtn" class="btn-secondary-small">Pause Stream</button>
-                            <button type="button" id="clearStreamBtn" class="btn-secondary-small">Clear Display</button>
-                        </div>
-                    </div>
-                    
-                    <div class="content-stream-container">
-                        <div class="content-stream" id="contentStream">
-                            <div class="stream-placeholder">
-                                <p>Generated content will appear here in real-time...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- QA Feedback Panel -->
-                <div class="qa-feedback-section">
-                    <div class="qa-header">
-                        <h3 class="section-title">Quality Assurance Feedback</h3>
-                        <button type="button" id="toggleQaPanel" class="btn-toggle">Collapse</button>
-                    </div>
-                    
-                    <div class="qa-panels" id="qaFeedbackPanels">
-                        <div class="qa-placeholder">
-                            <p>QA evaluations will appear here as they are processed...</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Process Log (Collapsible) -->
-                <div class="log-section">
-                    <div class="log-header">
-                        <h3 class="section-title">Process Log</h3>
-                        <button type="button" id="toggleLogPanel" class="btn-toggle">Expand</button>
-                    </div>
-                    
-                    <div class="log-container collapsed" id="processLogContainer">
-                        <div class="log-content" id="processLogContent"></div>
+
+                <!-- Waiting for Result Placeholder -->
+                <div class="waiting-section" id="waitingSection">
+                    <div class="waiting-content">
+                        <div class="waiting-icon">[...]</div>
+                        <p class="waiting-text">Content is being generated and evaluated...</p>
+                        <p class="waiting-hint">Click <strong>LIVE MATRIX</strong> in the top right corner to watch the process in real-time</p>
                     </div>
                 </div>
                 
                 <!-- Final Results -->
                 <div class="results-section" id="finalResultsSection" style="display: none;">
                     <div class="results-header">
-                        <h3 class="section-title">Generation Complete</h3>
+                        <div class="results-title-row">
+                            <h3 class="section-title">Generation Complete</h3>
+                            <div class="result-status-badge" id="resultStatusBadge">
+                                <span class="status-icon"></span>
+                                <span class="status-text">Approved</span>
+                            </div>
+                        </div>
                         <div class="result-summary">
                             <div class="result-metric">
                                 <span class="metric-label">Final Score:</span>

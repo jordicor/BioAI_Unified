@@ -524,16 +524,15 @@ async def _generate_full_content(
                     session["partial_content"] = "".join(content_chunks)
 
                 project_id = session.get("project_id")
-                if project_id:
+                if project_id and chunk_text:
                     # Stream both thinking and content to project subscribers
-                    if chunk_text:
-                        await publish_project_phase_chunk(
-                            project_id,
-                            "generation",
-                            chunk_text,
-                            session_id=session_id,
-                            request_name=session.get("request_name"),
-                        )
+                    await publish_project_phase_chunk(
+                        project_id,
+                        "generation",
+                        chunk_text,
+                        session_id=session_id,
+                        request_name=session.get("request_name"),
+                    )
 
                 # Send periodic thinking status updates if AI is taking long before first chunk
                 if is_thinking_model and not received_first_chunk:

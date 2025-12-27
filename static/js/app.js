@@ -115,32 +115,21 @@ class BioAIInterface {
     }
     
     initializeProcessingScreen() {
-        // Clear previous content
-        const contentStream = document.getElementById('contentStream');
-        if (contentStream) {
-            contentStream.innerHTML = '<div class="stream-placeholder"><p>Generated content will appear here in real-time...</p></div>';
-        }
-        
-        const qaFeedbackPanels = document.getElementById('qaFeedbackPanels');
-        if (qaFeedbackPanels) {
-            qaFeedbackPanels.innerHTML = '<div class="qa-placeholder"><p>QA evaluations will appear here as they are processed...</p></div>';
-        }
-        
-        const processLogContent = document.getElementById('processLogContent');
-        if (processLogContent) {
-            processLogContent.innerHTML = '';
-        }
-        
-        // Hide final results
+        // Show waiting section, hide final results
+        const waitingSection = document.getElementById('waitingSection');
         const finalResults = document.getElementById('finalResultsSection');
+
+        if (waitingSection) {
+            waitingSection.style.display = 'block';
+        }
         if (finalResults) {
             finalResults.style.display = 'none';
         }
-        
+
         // Set initial status
         this.updateProcessingStatus('Initializing', 'Preparing generation...');
-        
-        // Sincroniza contador de iteraciones con el valor del form
+
+        // Sync iteration counter with form value
         const maxEl = document.getElementById('maxIterationsDisplay');
         const curEl = document.getElementById('currentIterationDisplay');
         if (maxEl) maxEl.textContent = document.getElementById('maxIterations')?.value || '3';
@@ -224,7 +213,7 @@ class BioAIInterface {
     startContentStreaming() {
         if (!this.currentSession) return;
         
-        this.eventSource = new EventSource(`/stream/${this.currentSession}`);
+        this.eventSource = new EventSource(`/stream/project/${this.currentSession}`);
         
         this.eventSource.onmessage = (event) => {
             try {
@@ -242,6 +231,63 @@ class BioAIInterface {
     }
     
     handleStreamUpdate(update) {
+        if (!update || typeof update !== 'object') {
+            return;
+        }
+
+        // Debug logging
+        console.log('[Stream Update]', update.type || update.status, update);
+
+        if (typeof update.type === 'string') {
+            const eventType = update.type;
+
+            if (eventType === 'connected') {
+                return;
+            }
+
+            if (eventType === 'snapshot' || eventType === 'status_change') {
+                const statusValue = this.getStreamStatusValue(update);
+                this.applyStreamStatusUpdate(statusValue, update);
+                if (this.isFinalStatus(statusValue)) {
+                    this.finishStream(statusValue, update.reason || '');
+                }
+                return;
+            }
+
+            if (eventType === 'chunk') {
+                const phase = update.phase === 'gran_sabio' ? 'gransabio' : update.phase;
+                if (update.is_thinking === true) {
+                    return;
+                }
+                if (typeof update.content === 'string' && (phase === 'generation' || phase === 'consensus')) {
+                    this.updateContentStream(update.content, { append: true });
+                }
+                return;
+            }
+
+            if (eventType === 'log') {
+                if (typeof update.message === 'string' && update.message.length > 0) {
+                    this.addNewVerboseLogs([update.message]);
+                }
+                return;
+            }
+
+            if (eventType === 'stream_end') {
+                const statusValue = this.getStreamStatusValue(update);
+                this.finishStream(statusValue, update.reason || '');
+                return;
+            }
+
+            // Handle session_end event (final completion)
+            if (eventType === 'session_end') {
+                const statusValue = this.normalizeStatus(update.status);
+                if (this.isFinalStatus(statusValue)) {
+                    this.finishStream(statusValue, '');
+                }
+                return;
+            }
+        }
+
         // 1) Estado y progreso
         if (update.status) {
             this.updateProcessingStatus(this.formatStatus(update.status), update.progress_text || '');
@@ -271,87 +317,121 @@ class BioAIInterface {
             this.updateContentStream(update.generated_content, { append: false });
         }
 
-        // 4) QA feedback incremental
+        // 4) QA feedback and verbose logs - now shown in Live Matrix (/monitor)
+        // Keeping console.log for debugging purposes
         if (update.qa_feedback) {
-            this.updateQAFeedback(update.qa_feedback);
+            console.log('[QA Feedback]', update.qa_feedback);
         }
-
-        // 5) Verbose logs
         if (update.verbose_log) {
-            this.addNewVerboseLogs(update.verbose_log);
+            console.log('[Verbose]', update.verbose_log);
         }
 
-        // 6) Fin de proceso
-        if (update.status === 'completed' || update.status === 'failed' || update.status === 'cancelled') {
+        // 5) Fin de proceso
+        const normalizedStatus = this.normalizeStatus(update.status);
+        if (this.isFinalStatus(normalizedStatus)) {
             if (this.eventSource) {
                 this.eventSource.close();
                 this.eventSource = null;
             }
             this.stopProgressTracking();
-            this.handleGenerationComplete(update);
+            this.handleGenerationComplete({ ...update, status: normalizedStatus });
+        }
+    }
+
+    getStreamStatusValue(update) {
+        // Handle status object with value property
+        if (update && typeof update.status === 'object' && update.status !== null && 'value' in update.status) {
+            return this.normalizeStatus(update.status.value);
+        }
+        // Handle project.status (from status_change events)
+        if (update && update.project && update.project.status) {
+            return this.normalizeStatus(update.project.status);
+        }
+        // Handle direct status string
+        if (update && update.status) {
+            return this.normalizeStatus(update.status);
+        }
+        return update.current_phase || null;
+    }
+
+    applyStreamStatusUpdate(statusValue, update) {
+        if (statusValue) {
+            this.updateProcessingStatus(this.formatStatus(statusValue), update.progress_text || '');
+        }
+
+        const progressBar = document.getElementById('progressBar') || document.getElementById('mainProgressBar')?.querySelector('.progress-fill');
+        if (progressBar && statusValue) {
+            const progress = this.calculateProgress({
+                status: statusValue,
+                current_iteration: update.current_iteration ?? 0,
+                max_iterations: update.max_iterations ?? 0
+            });
+            progressBar.style.width = `${progress}%`;
+        }
+
+        const curEl = document.getElementById('currentIterationDisplay');
+        const maxEl = document.getElementById('maxIterationsDisplay');
+        if (curEl && update.current_iteration !== undefined) curEl.textContent = update.current_iteration;
+        if (maxEl && update.max_iterations !== undefined) maxEl.textContent = update.max_iterations;
+    }
+
+    isFinalStatus(statusValue) {
+        return ['completed', 'failed', 'cancelled'].includes(statusValue);
+    }
+
+    normalizeStatus(status) {
+        if (!status) return null;
+        // Handle "GenerationStatus.COMPLETED" format
+        if (typeof status === 'string' && status.includes('.')) {
+            const parts = status.split('.');
+            return parts[parts.length - 1].toLowerCase();
+        }
+        return status.toLowerCase ? status.toLowerCase() : status;
+    }
+
+    finishStream(statusValue, reason) {
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+        this.stopProgressTracking();
+        this.setLoadingState(false);
+
+        // Hide waiting section
+        const waitingSection = document.getElementById('waitingSection');
+        if (waitingSection) {
+            waitingSection.style.display = 'none';
+        }
+
+        if (statusValue) {
+            this.updateProcessingStatus(this.formatStatus(statusValue), reason || '');
+        }
+
+        if (this.isFinalStatus(statusValue)) {
+            this.showFinalResults();
         }
     }
     
     updateContentStream(text, { append = false } = {}) {
-        const contentStream = document.getElementById('contentStream');
-        if (!contentStream || !text) return;
-
-        // Quita placeholder si existe
-        const placeholder = contentStream.querySelector('.stream-placeholder');
-        if (placeholder) placeholder.remove();
-
-        if (append) {
-            contentStream.textContent += text;
-        } else {
-            contentStream.textContent = text;
+        // Content streaming removed - final content shown only after completion
+        // See Live Matrix (/monitor) for real-time streaming
+        if (text) {
+            console.log('[Content Stream]', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
         }
-
-        // Auto-scroll
-        contentStream.scrollTop = contentStream.scrollHeight;
     }
     
     updateQAFeedback(qaFeedback) {
-        const qaFeedbackPanels = document.getElementById('qaFeedbackPanels');
-        if (qaFeedbackPanels && Array.isArray(qaFeedback)) {
-            // Remove placeholder if present
-            const placeholder = qaFeedbackPanels.querySelector('.qa-placeholder');
-            if (placeholder) {
-                placeholder.remove();
-            }
-            
-            // Clear and rebuild QA panels
-            qaFeedbackPanels.innerHTML = '';
-            
-            qaFeedback.forEach((qa, index) => {
-                const qaPanel = document.createElement('div');
-                qaPanel.className = 'qa-feedback-item';
-                const layerName = escapeHtml(qa.layer_name || `Layer ${index + 1}`);
-                const scoreClass = qa.score >= 7.5 ? 'good' : 'warning';
-                const scoreValue = escapeHtml(qa.score);
-                const feedbackText = escapeHtml(qa.feedback || 'Processing...');
-                qaPanel.innerHTML = `
-                    <div class="qa-layer-header">
-                        <span class="qa-layer-name">${layerName}</span>
-                        <span class="qa-score ${scoreClass}">${scoreValue}/10</span>
-                    </div>
-                    <div class="qa-feedback-text">${feedbackText}</div>
-                    ${qa.deal_breaker ? '<div class="qa-deal-breaker">DEAL BREAKER DETECTED</div>' : ''}
-                `;
-                qaFeedbackPanels.appendChild(qaPanel);
-            });
+        // QA feedback is now shown in Live Matrix (/monitor)
+        // Keeping console.log for debugging
+        if (Array.isArray(qaFeedback)) {
+            console.log('[QA Feedback Update]', qaFeedback);
         }
     }
     
     addToProcessLog(logText) {
-        const processLogContent = document.getElementById('processLogContent');
-        if (processLogContent && logText) {
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${logText}`;
-            processLogContent.appendChild(logEntry);
-            
-            // Auto-scroll to bottom
-            processLogContent.scrollTop = processLogContent.scrollHeight;
+        // Process log is now shown in Live Matrix (/monitor)
+        if (logText) {
+            console.log(`[Process Log] ${logText}`);
         }
     }
     
@@ -361,47 +441,42 @@ class BioAIInterface {
             this.eventSource.close();
             this.eventSource = null;
         }
-        
+
         // Stop progress tracking
         this.stopProgressTracking();
-        
-        // Show final results
-        const finalResultsSection = document.getElementById('finalResultsSection');
-        if (finalResultsSection) {
-            finalResultsSection.style.display = 'block';
-            
-            // Update final metrics
-            if (update.final_score !== undefined) {
-                const finalScoreDisplay = document.getElementById('finalScoreDisplay');
-                if (finalScoreDisplay) {
-                    finalScoreDisplay.textContent = update.final_score.toFixed(1);
-                }
-            }
-            
-            if (update.final_iteration !== undefined) {
-                const finalIterationsDisplay = document.getElementById('finalIterationsDisplay');
-                if (finalIterationsDisplay) {
-                    finalIterationsDisplay.textContent = update.final_iteration;
-                }
-            }
-            
-            if (update.content) {
-                const finalContentDisplay = document.getElementById('finalContentDisplay');
-                if (finalContentDisplay) {
-                    finalContentDisplay.textContent = update.content;
-                }
-                
-                // Update word count
-                const wordCount = update.content.split(/\s+/).length;
-                const finalWordCountDisplay = document.getElementById('finalWordCountDisplay');
-                if (finalWordCountDisplay) {
-                    finalWordCountDisplay.textContent = wordCount;
-                }
-            }
+
+        // Reset loading state (hides Stop button)
+        this.setLoadingState(false);
+
+        // Update status text
+        const statusText = update.status === 'failed' ? 'Failed' :
+                          update.status === 'cancelled' ? 'Cancelled' : 'Completed';
+        this.updateProcessingStatus(statusText, 'Loading results...');
+
+        // Fetch and display final results from the API
+        this.showFinalResults();
+    }
+
+    updateResultStatusBadge(isApproved, status) {
+        const badge = document.getElementById('resultStatusBadge');
+        if (!badge) return;
+
+        const iconSpan = badge.querySelector('.status-icon');
+        const textSpan = badge.querySelector('.status-text');
+
+        if (status === 'cancelled') {
+            badge.className = 'result-status-badge cancelled';
+            if (iconSpan) iconSpan.textContent = '[X]';
+            if (textSpan) textSpan.textContent = 'Cancelled';
+        } else if (status === 'failed' || !isApproved) {
+            badge.className = 'result-status-badge rejected';
+            if (iconSpan) iconSpan.textContent = '[!]';
+            if (textSpan) textSpan.textContent = 'Rejected';
+        } else {
+            badge.className = 'result-status-badge approved';
+            if (iconSpan) iconSpan.textContent = '[OK]';
+            if (textSpan) textSpan.textContent = 'Approved';
         }
-        
-        // Update final status
-        this.updateProcessingStatus('Completed', 'Generation completed successfully');
     }
 
     bindEvents() {
@@ -924,63 +999,18 @@ class BioAIInterface {
 
     startProgressTracking() {
         if (!this.currentSession) return;
-        
-        // Try direct streaming first (like story_simple pattern)
-        this.startDirectStreaming();
-        
+
+        // Use EventSource for real-time status updates
+        this.startEventStream();
+
         // Fallback polling as last resort
         this.progressInterval = setInterval(() => {
             if (!this.eventSource || this.eventSource.readyState === EventSource.CLOSED) {
                 this.updateProgress();
             }
-        }, 5000);
+        }, 3000);
     }
-    
-    async startDirectStreaming() {
-        try {
-            // Use new working endpoint - stream-content-direct that actually streams!
-            const response = await fetch(`/stream-content-direct/${this.currentSession}`, {
-                method: 'GET',
-                headers: {
-                    'Cache-Control': 'no-cache',
-                    'Accept': 'text/plain'
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Direct streaming failed: ${response.status}`);
-            }
-            
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let accumulatedContent = '';
-            
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    // Generation complete - start EventSource for final status
-                    this.updateProcessingStatus('Completed', 'Content generation completed successfully');
-                    this.startEventStream();
-                    break;
-                }
-                
-                const text = decoder.decode(value);
-                accumulatedContent += text;
-                
-                // Update content stream in real-time
-                this.updateContentStream(accumulatedContent, { append: false });
-                
-                // Update status to show streaming is active
-                this.updateProcessingStatus('Generating', 'Content streaming in real-time...');
-            }
-            
-        } catch (error) {
-            console.error('Direct streaming failed, falling back to EventSource:', error);
-            // Fallback to EventSource for everything
-            this.startEventStream();
-        }
-    }
-    
+
     startEventStream() {
         if (!this.currentSession) return;
 
@@ -990,7 +1020,7 @@ class BioAIInterface {
             this.eventSource = null;
         }
 
-        this.eventSource = new EventSource(`/stream/${this.currentSession}`);
+        this.eventSource = new EventSource(`/stream/project/${this.currentSession}`);
 
         this.eventSource.onmessage = (event) => {
             try {
@@ -1014,14 +1044,20 @@ class BioAIInterface {
         try {
             const response = await fetch(`/status/${this.currentSession}`);
             const status = await response.json();
-            
+
             this.updateProgressUI(status);
-            
+
             if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
                 this.stopProgressTracking();
-                this.setLoadingState(false);  // Reset UI state
-                
-                // Show final results for completed, failed and cancelled generations
+                this.setLoadingState(false);
+
+                // Hide waiting section
+                const waitingSection = document.getElementById('waitingSection');
+                if (waitingSection) {
+                    waitingSection.style.display = 'none';
+                }
+
+                // Show final results
                 await this.showFinalResults();
             }
         } catch (error) {
@@ -1030,11 +1066,6 @@ class BioAIInterface {
     }
 
     updateProgressUI(status) {
-        // Only update if EventSource is not active (fallback mode)
-        if (this.eventSource && this.eventSource.readyState === EventSource.OPEN) {
-            return; // Skip polling updates when streaming is active
-        }
-        
         // Update status badge
         const statusBadge = document.getElementById('statusBadge') || document.getElementById('processingStatusBadge');
         if (statusBadge) {
@@ -1060,15 +1091,17 @@ class BioAIInterface {
     }
 
     formatStatus(status) {
+        const normalized = this.normalizeStatus(status);
         const statusMap = {
             'initializing': 'Initializing',
             'generating': 'Generating',
             'qa_evaluation': 'QA Evaluation',
             'gran_sabio_review': 'Gran Sabio Review',
             'completed': 'Completed',
-            'failed': 'Failed'
+            'failed': 'Failed',
+            'cancelled': 'Cancelled'
         };
-        return statusMap[status] || status;
+        return statusMap[normalized] || status;
     }
 
     calculateProgress(status) {
@@ -1127,127 +1160,114 @@ class BioAIInterface {
     }
 
     updateVerboseLogs(logs) {
-        const logContainer = document.getElementById('logContainer') || document.getElementById('processLogContent');
-        
-        if (!logContainer) return;
-        
-        // Only add new logs
-        const currentLogCount = logContainer.children.length;
-        const newLogs = logs.slice(currentLogCount);
-        
-        newLogs.forEach(log => {
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            logEntry.textContent = log;
-            logContainer.appendChild(logEntry);
-        });
-        
-        // Auto-scroll to bottom
-        logContainer.scrollTop = logContainer.scrollHeight;
+        // Verbose logs are now shown in Live Matrix (/monitor)
+        if (logs && logs.length > 0) {
+            console.log('[Verbose Logs]', logs);
+        }
     }
-    
+
     addNewVerboseLogs(newLogs) {
-        const logContainer = document.getElementById('logContainer') || document.getElementById('processLogContent');
-        
-        if (!logContainer || !newLogs || newLogs.length === 0) return;
-        
-        newLogs.forEach(log => {
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            logEntry.textContent = log;
-            logContainer.appendChild(logEntry);
-        });
-        
-        // Auto-scroll to bottom
-        logContainer.scrollTop = logContainer.scrollHeight;
+        // Verbose logs are now shown in Live Matrix (/monitor)
+        if (newLogs && newLogs.length > 0) {
+            newLogs.forEach(log => console.log('[Verbose]', log));
+        }
     }
 
     async showFinalResults() {
         try {
             const response = await fetch(`/result/${this.currentSession}`);
             const result = await response.json();
-            
+
+            // Hide waiting section
+            const waitingSection = document.getElementById('waitingSection');
+            if (waitingSection) {
+                waitingSection.style.display = 'none';
+            }
+
             // Determine if content was approved
-            const isApproved = result.approved !== false; // Default to true for backward compatibility
-            
-            // Update metrics with approval status styling
-            const finalScoreElement = document.getElementById('finalScore');
-            const finalIterationElement = document.getElementById('finalIteration');
-            const contentLengthElement = document.getElementById('contentLength');
-            const generatedContentElement = document.getElementById('generatedContent');
-            const finalResultsSection = document.getElementById('finalResults');
-            
-            finalScoreElement.textContent = result.final_score.toFixed(1);
-            finalIterationElement.textContent = result.final_iteration;
-            
-            // Count words instead of characters
-            const wordCount = result.content.trim().split(/\s+/).filter(word => word.length > 0).length;
-            contentLengthElement.textContent = `${wordCount} words`;
-            
+            const isApproved = result.approved !== false;
+            const status = result.approved === false ? 'rejected' : 'completed';
+
+            // Update status badge
+            this.updateResultStatusBadge(isApproved, status);
+
+            // Get elements (using correct IDs)
+            const finalScoreDisplay = document.getElementById('finalScoreDisplay');
+            const finalIterationsDisplay = document.getElementById('finalIterationsDisplay');
+            const finalWordCountDisplay = document.getElementById('finalWordCountDisplay');
+            const finalContentDisplay = document.getElementById('finalContentDisplay');
+            const finalResultsSection = document.getElementById('finalResultsSection');
+
+            // Update metrics
+            if (finalScoreDisplay && result.final_score !== undefined) {
+                finalScoreDisplay.textContent = result.final_score.toFixed(1);
+                finalScoreDisplay.style.color = isApproved ? '#10b981' : '#ef4444';
+            }
+            if (finalIterationsDisplay) {
+                finalIterationsDisplay.textContent = result.final_iteration || '-';
+            }
+
+            // Count words
+            if (finalWordCountDisplay && result.content) {
+                const wordCount = result.content.trim().split(/\s+/).filter(word => word.length > 0).length;
+                finalWordCountDisplay.textContent = wordCount;
+            }
+
             // Clean up any previous failure reason elements
             const existingFailureReason = document.querySelector('.failure-reason');
             if (existingFailureReason) {
                 existingFailureReason.remove();
             }
-            
+
             // Apply styling based on approval status
-            if (isApproved) {
-                // Approved content - green styling
-                finalResultsSection.classList.remove('rejected');
-                finalResultsSection.classList.add('approved');
-                generatedContentElement.style.borderColor = '#10b981';
-                generatedContentElement.style.backgroundColor = '#f0fdf4';
-                finalScoreElement.style.color = '#10b981';
-            } else {
-                // Rejected content - red styling  
-                finalResultsSection.classList.remove('approved');
-                finalResultsSection.classList.add('rejected');
-                generatedContentElement.style.borderColor = '#ef4444';
-                generatedContentElement.style.backgroundColor = '#fef2f2';
-                finalScoreElement.style.color = '#ef4444';
-                
-                // Add failure reason if available
-                if (result.failure_reason) {
-                    // Log complete failure reason to console
-                    console.log('Content rejection reason (full):', result.failure_reason);
-                    
-                    const failureReasonElement = document.createElement('textarea');
-                    failureReasonElement.className = 'failure-reason';
-                    failureReasonElement.style.cssText = `
-                        background-color: #fee2e2;
-                        border: 1px solid #fecaca;
-                        border-radius: 6px;
-                        padding: 12px;
-                        margin-bottom: 16px;
-                        color: #dc2626;
-                        font-size: 14px;
-                        width: 100%;
-                        min-height: 120px;
-                        resize: vertical;
-                        font-family: inherit;
-                        line-height: 1.4;
-                    `;
-                    failureReasonElement.value = `Reason for rejection:\n\n${result.failure_reason}`;
-                    failureReasonElement.readOnly = true;
-                    
-                    // Insert before the content display
-                    const contentContainer = document.querySelector('.content-container');
-                    contentContainer.insertBefore(failureReasonElement, contentContainer.firstChild);
+            if (finalResultsSection) {
+                if (isApproved) {
+                    finalResultsSection.classList.remove('rejected');
+                    finalResultsSection.classList.add('approved');
+                } else {
+                    finalResultsSection.classList.remove('approved');
+                    finalResultsSection.classList.add('rejected');
                 }
             }
-            
-            // Show generated content
-            generatedContentElement.textContent = result.content;
-            
-            // Log full content and rejection details to console
-            console.log('Generated content (full):', result.content);
-            if (!isApproved && result.failure_reason) {
-                console.log('Rejection reason (complete):', result.failure_reason);
+
+            // Show content
+            if (finalContentDisplay) {
+                finalContentDisplay.textContent = result.content || '';
+                finalContentDisplay.style.borderColor = isApproved ? '#10b981' : '#ef4444';
+                finalContentDisplay.style.backgroundColor = isApproved ? '#f0fdf4' : '#fef2f2';
             }
-            
+
+            // Add failure reason if rejected
+            if (!isApproved && result.failure_reason) {
+                console.log('Content rejection reason:', result.failure_reason);
+
+                const failureReasonElement = document.createElement('div');
+                failureReasonElement.className = 'failure-reason';
+                failureReasonElement.style.cssText = `
+                    background-color: #fee2e2;
+                    border: 1px solid #fecaca;
+                    border-radius: 6px;
+                    padding: 12px;
+                    margin-bottom: 16px;
+                    color: #dc2626;
+                    font-size: 14px;
+                `;
+                failureReasonElement.innerHTML = `<strong>Rejection reason:</strong> ${escapeHtml(result.failure_reason)}`;
+
+                // Insert before the content display
+                if (finalContentDisplay && finalContentDisplay.parentNode) {
+                    finalContentDisplay.parentNode.insertBefore(failureReasonElement, finalContentDisplay);
+                }
+            }
+
+            // Log to console
+            console.log('Generated content:', result.content);
+
             // Show final results section
-            finalResultsSection.style.display = 'block';
-            
+            if (finalResultsSection) {
+                finalResultsSection.style.display = 'block';
+            }
+
         } catch (error) {
             this.showError(`Failed to load results: ${error.message}`);
         }
@@ -1667,22 +1687,7 @@ class BioAIInterface {
     }
 
     initializeLogToggle() {
-        // Add log toggle functionality
-        const logToggle = document.getElementById('logToggle');
-        const logContainer = document.getElementById('logContainer');
-        
-        if (logToggle && logContainer) {
-            logToggle.addEventListener('click', () => {
-                const isHidden = logContainer.style.display === 'none';
-                if (isHidden) {
-                    logContainer.style.display = 'block';
-                    logToggle.textContent = 'Collapse';
-                } else {
-                    logContainer.style.display = 'none';
-                    logToggle.textContent = 'Expand';
-                }
-            });
-        }
+        // Log toggle removed - logs now shown in Live Matrix (/monitor)
     }
 
     initializeDownloadButton() {

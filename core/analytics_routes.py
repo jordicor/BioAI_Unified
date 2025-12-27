@@ -25,7 +25,7 @@ async def api_info():
         "endpoints": {
             "generate": "/generate",
             "status": "/status/{session_id}",
-            "stream": "/stream/{session_id}",
+            "stream": "/stream/project/{project_id}",
             "result": "/result/{session_id}",
             "docs": "/docs"
         }

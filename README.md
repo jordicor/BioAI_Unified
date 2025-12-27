@@ -462,7 +462,7 @@ Full interactive documentation available at:
 |----------|--------|-------------|
 | `/generate` | POST | Start content generation with QA |
 | `/status/{session_id}` | GET | Check session status |
-| `/stream/{session_id}` | GET | Real-time SSE progress stream |
+| `/stream/project/{project_id}` | GET | Real-time SSE progress stream (project_id = session_id when not explicit) |
 | `/result/{session_id}` | GET | Get final approved content |
 | `/stop/{session_id}` | POST | Cancel active generation |
 | `/models` | GET | List available AI models |
@@ -515,6 +515,97 @@ Stream progress:
 for event in client.stream_generate(prompt="...", qa_layers=[...]):
     print(f"[{event.phase}] {event.message}")
 ```
+
+---
+
+## MCP Integration (Claude Code, Gemini CLI, Codex CLI)
+
+BioAI Unified includes a **Model Context Protocol (MCP) server** that integrates directly with AI coding assistants. Get multi-model code review and analysis without leaving your terminal.
+
+### What You Get
+
+| Tool | Description |
+|------|-------------|
+| `bioai_analyze_code` | Analyze code for bugs, security issues, and best practices |
+| `bioai_review_fix` | Validate a proposed fix before applying it |
+| `bioai_generate_with_qa` | Generate content with multi-model QA |
+| `bioai_check_health` | Verify BioAI API connectivity |
+| `bioai_list_models` | List available AI models |
+
+### Quick Setup
+
+**1. Install MCP dependencies:**
+```bash
+pip install -r mcp/requirements.txt
+```
+
+**2. Run the installer script:**
+
+**Windows:**
+```cmd
+install_mcp.bat
+```
+
+**Linux/macOS:**
+```bash
+./install_mcp.sh
+```
+
+The scripts automatically detect paths and register the MCP server with Claude Code.
+
+**Manual installation** (if you prefer):
+
+```bash
+# Use absolute paths - relative paths won't work!
+claude mcp add bioai-unified -- python /path/to/BioAI_Unified/mcp/bioai_mcp_server.py
+```
+
+**Gemini CLI** (`~/.gemini/settings.json`):
+```json
+{
+  "mcpServers": {
+    "bioai-unified": {
+      "command": "python",
+      "args": ["/path/to/BioAI_Unified/mcp/bioai_mcp_server.py"]
+    }
+  }
+}
+```
+
+**Codex CLI** (`~/.codex/config.toml`):
+```toml
+[mcp_servers.bioai-unified]
+command = "python"
+args = ["/path/to/BioAI_Unified/mcp/bioai_mcp_server.py"]
+```
+
+### Example Usage
+
+```
+You: Analyze this code for security issues using BioAI
+
+Claude: [Calls bioai_analyze_code]
+
+BioAI Analysis (Score: 8.2/10):
+- [CRITICAL] SQL injection at line 45
+- [HIGH] Hardcoded credentials at line 12
+- [MEDIUM] Missing input validation at line 30
+
+Reviewed by: GPT-5-Codex, Claude Opus 4.5, GLM-4.7
+Consensus: 3/3 models agree
+```
+
+### Remote/SaaS Configuration
+
+For hosted BioAI instances:
+```bash
+claude mcp add bioai-unified \
+  --env BIOAI_API_URL=https://api.bioai.example.com \
+  --env BIOAI_API_KEY=your-api-key \
+  -- python /path/to/bioai_mcp_server.py
+```
+
+See full documentation: **[mcp/README.md](mcp/README.md)**
 
 ---
 

@@ -13,7 +13,7 @@ from fastapi import HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from attachments_router import get_attachment_manager
-from models import GenerationStatus, ProgressUpdate
+from models import GenerationStatus
 from services.attachment_manager import AttachmentError
 from services.project_stream import ProjectStreamManager, parse_phases, SubscriptionError
 
@@ -362,69 +362,6 @@ async def stream_gran_sabio_content(session_id: str):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )
-
-
-@app.get("/stream/{session_id}")
-async def stream_progress(session_id: str):
-    """Stream real-time progress updates for a generation session"""
-    exists = await mutate_session(session_id, lambda session: True)
-    if exists is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    async def progress_generator():
-        last_log_count = 0
-        last_heartbeat = time.time()
-        HEARTBEAT_INTERVAL = 15  # Send SSE comment every 15 seconds to keep connection alive
-
-        while True:
-            snapshot = await mutate_session(
-                session_id,
-                lambda session: {
-                    "status": session["status"],
-                    "current_iteration": session["current_iteration"],
-                    "max_iterations": session["max_iterations"],
-                    "verbose_log": list(session["verbose_log"]),
-                    "partial_content": session.get("partial_content"),
-                    "last_generated_content": session.get("last_generated_content"),
-                    "project_id": session.get("project_id"),
-                    "request_name": session.get("request_name"),
-                }
-            )
-            if snapshot is None:
-                break
-
-            verbose_log = snapshot["verbose_log"]
-            current_log_count = len(verbose_log)
-            new_logs = verbose_log[last_log_count:] if current_log_count > last_log_count else []
-            last_log_count = current_log_count
-
-            content_to_send = snapshot.get("partial_content") or snapshot.get("last_generated_content")
-
-            update = ProgressUpdate(
-                session_id=session_id,
-                project_id=snapshot.get("project_id"),
-                request_name=snapshot.get("request_name"),
-                status=snapshot["status"],
-                current_iteration=snapshot["current_iteration"],
-                verbose_log=new_logs,
-                max_iterations=snapshot["max_iterations"],
-                generated_content=content_to_send
-            )
-
-            yield f"data: {update.json()}\n\n"
-
-            if snapshot["status"] in [GenerationStatus.COMPLETED, GenerationStatus.FAILED, GenerationStatus.CANCELLED]:
-                break
-
-            # Send SSE heartbeat comment to keep connection alive
-            now = time.time()
-            if now - last_heartbeat >= HEARTBEAT_INTERVAL:
-                yield ": ping\n\n"
-                last_heartbeat = now
-
-            await asyncio.sleep(0.5)  # Update every 500ms for more responsive UI
-
-    return StreamingResponse(progress_generator(), media_type="text/event-stream")
 
 
 # --- Project-scoped unified stream ---

@@ -314,17 +314,23 @@ async def generate_content(request: ContentRequest):
                            f"Call POST /project/start/{project_id} to reactivate it."
                 )
 
-    request_project_id = bool(getattr(request, "request_project_id", False))
-    if request_project_id and not project_id:
-        project_id = uuid.uuid4().hex
-        logger.info(f"BIOAI_MAIN: Generated NEW project_id: {project_id}")
-    elif not project_id:
-        logger.info("BIOAI_MAIN: No project_id handling - neither existing nor request_project_id")
+    # Generate session_id early so we can use it as default project_id
+    # This unifies session and project streaming: when no project_id is provided,
+    # the session_id becomes the project_id, allowing clients to use
+    # /stream/project/{session_id} for real-time updates
+    session_id = str(uuid.uuid4())
+
+    if not project_id:
+        # Unification: session_id = project_id when not explicitly provided
+        project_id = session_id
+        logger.info(f"BIOAI_MAIN: Using session_id as project_id: {project_id}")
+    else:
+        logger.info(f"BIOAI_MAIN: Using explicit project_id: {project_id}")
+
     if project_id:
         _reserve_project_id(project_id)
     request.project_id = project_id
     request_payload["project_id"] = project_id
-    request_payload["request_project_id"] = request_project_id
 
     # Validate word count enforcement configuration early
     if is_word_count_enforcement_enabled(request.word_count_enforcement):
@@ -415,9 +421,8 @@ async def generate_content(request: ContentRequest):
 
     recommended_timeout_seconds = _estimate_session_timeout(request, reasoning_timeout_hint)
 
-    # Create session ID upfront - reused for both preflight and generation
-    # This ensures stream_monitor sees a single session instead of separate preflight/generation tabs
-    session_id = str(uuid.uuid4())
+    # session_id was already generated earlier (before project_id handling)
+    # Register temp session for preflight streaming
     temp_session = {
         "preflight_content": "",
         "current_phase": "preflight_validation"

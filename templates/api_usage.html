@@ -125,7 +125,7 @@
                     <div class="step-card">
                         <div class="step-number">2</div>
                         <h3>Monitor Progress</h3>
-                        <p>Track real-time updates via <code>/stream/{session_id}</code></p>
+                        <p>Track real-time updates via <code>/stream/project/{project_id}</code></p>
                     </div>
                     <div class="step-card">
                         <div class="step-number">3</div>
@@ -315,17 +315,17 @@ content = result.json()['content']</code></pre>
                 <h3 class="docs-minor-heading">Real-time Streaming</h3>
                 <div class="endpoint-header">
                     <span class="http-method get">GET</span>
-                    <span class="endpoint-path">/stream/{session_id}</span>
+                    <span class="endpoint-path">/stream/project/{project_id}</span>
                 </div>
 
-                <p>Stream live progress updates using Server-Sent Events.</p>
+                <p>Stream live progress updates using Server-Sent Events. When no explicit <code>project_id</code> is provided in the generation request, the <code>session_id</code> is used as the <code>project_id</code>.</p>
 
                 <div class="code-example">
                     <div class="code-header">
                         <span class="code-lang">JavaScript</span>
                         <button class="copy-btn" onclick="copyCode(this)">Copy</button>
                     </div>
-                    <pre><code class="language-javascript">const eventSource = new EventSource(`/stream/${sessionId}`);
+                    <pre><code class="language-javascript">const eventSource = new EventSource(`/stream/project/${projectId}`);
 
 eventSource.onmessage = (event) => {
   const update = JSON.parse(event.data);
@@ -899,9 +899,9 @@ print(biography)</code></pre>
 
     const { session_id } = await response.json();
 
-    // Stream progress
+    // Stream progress (project_id = session_id when not explicitly provided)
     const eventSource = new EventSource(
-        `https://api.bioai.com/stream/${session_id}`
+        `https://api.bioai.com/stream/project/${session_id}`
     );
 
     return new Promise((resolve, reject) => {

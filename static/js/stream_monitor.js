@@ -15,10 +15,6 @@ let currentProjectId = null;
 let stats = {};
 let lastProjectData = null;  // Cache for re-rendering dashboard
 
-// Dual-mode support: 'project' or 'session'
-let currentConnectionMode = 'project';
-let currentSessionId = null;
-
 // Helper to check if we're in Overview mode
 function isOverviewMode() {
     return viewState.selectedRequestId === null;
@@ -49,10 +45,11 @@ const requestsData = {
 // View state for request selection
 const viewState = {
     selectedRequestId: null,
-    autoFollow: true        // Auto-select new requests when they arrive
+    autoFollow: true,        // Auto-select new requests when they arrive
+    tabsViewOffset: 0        // Offset for tabs sliding window (pagination)
 };
 
-// Maximum visible tabs before overflow
+// Maximum visible tabs before overflow (including Overview tab)
 const MAX_VISIBLE_TABS = 6;
 
 // ============================================
@@ -357,6 +354,10 @@ function clearAllContent() {
     // Render tabs (Overview will be shown)
     renderRequestTabs();
 
+    // Hide iteration timeline (no session selected)
+    const timeline = document.getElementById('iterationTimeline');
+    if (timeline) timeline.classList.add('hidden');
+
     // Hide status dashboard until data arrives
     hideDashboard();
 }
@@ -378,30 +379,23 @@ function processRequestFromEvent(data) {
 
     // Create request if it doesn't exist
     if (!requestsData.requests[sessionId]) {
+        const iteration = data.iteration || 1;
+
         requestsData.requests[sessionId] = {
             sessionId: sessionId,
             requestName: requestName,
             status: 'active',
-            currentIteration: data.iteration || 1,
+            currentIteration: iteration,
+            viewingIteration: iteration,      // Which iteration user is viewing
+            autoFollowIteration: true,        // Auto-switch to new iterations
             maxIterations: data.max_iterations || 5,
             finalScore: null,
-            // Content accumulated by phase
-            content: {
-                preflight: '',
-                generation: '',
-                qa: '',
-                consensus: '',
-                gransabio: ''
-            },
-            // Stats per phase
-            stats: {
-                preflight: { chunks: 0, bytes: 0 },
-                generation: { chunks: 0, bytes: 0 },
-                qa: { chunks: 0, bytes: 0 },
-                consensus: { chunks: 0, bytes: 0 },
-                gransabio: { chunks: 0, bytes: 0 }
-            }
+            // Content organized by iteration
+            iterations: {}
         };
+
+        // Initialize first iteration
+        initializeIteration(requestsData.requests[sessionId], iteration);
 
         // Add to ordered list
         requestsData.orderedRequestIds.push(sessionId);
@@ -425,11 +419,43 @@ function processRequestFromEvent(data) {
 
         // Trigger UI update
         renderRequestTabs();
+        renderIterationTimeline();
 
         log(`New request detected: ${requestName} (${sessionId.slice(0, 8)}...)`, 'info');
     }
 
     return requestsData.requests[sessionId];
+}
+
+/**
+ * Initialize a new iteration structure for a request
+ * @param {Object} request - The request object
+ * @param {number} iteration - The iteration number to initialize
+ */
+function initializeIteration(request, iteration) {
+    if (!request.iterations[iteration]) {
+        request.iterations[iteration] = {
+            content: {
+                preflight: '',
+                generation: '',
+                qa: '',
+                consensus: '',
+                gransabio: ''
+            },
+            stats: {
+                preflight: { chunks: 0, bytes: 0 },
+                generation: { chunks: 0, bytes: 0 },
+                qa: { chunks: 0, bytes: 0 },
+                consensus: { chunks: 0, bytes: 0 },
+                gransabio: { chunks: 0, bytes: 0 }
+            },
+            score: null,
+            approved: false,
+            status: 'in_progress',  // 'in_progress' | 'rejected' | 'approved'
+            timestampStart: Date.now(),
+            timestampEnd: null
+        };
+    }
 }
 
 // ============================================
@@ -455,22 +481,39 @@ function renderRequestTabs() {
     container.appendChild(overviewTab);
 
     const requests = requestsData.orderedRequestIds;
+    const totalRequests = requests.length;
 
     // Adjust max visible: -1 because Overview occupies one slot
     const maxSessionTabs = MAX_VISIBLE_TABS - 1;
-    const visibleCount = Math.min(requests.length, maxSessionTabs);
-    const overflowCount = requests.length - visibleCount;
 
-    // Render session tabs
-    for (let i = 0; i < visibleCount; i++) {
+    // Ensure offset is within valid bounds
+    const maxOffset = Math.max(0, totalRequests - maxSessionTabs);
+    if (viewState.tabsViewOffset > maxOffset) {
+        viewState.tabsViewOffset = maxOffset;
+    }
+    if (viewState.tabsViewOffset < 0) {
+        viewState.tabsViewOffset = 0;
+    }
+
+    const startIndex = viewState.tabsViewOffset;
+    const endIndex = Math.min(startIndex + maxSessionTabs, totalRequests);
+    const visibleCount = endIndex - startIndex;
+
+    // Check if there are more tabs before/after the visible window
+    const hasTabsBefore = startIndex > 0;
+    const hasTabsAfter = endIndex < totalRequests;
+
+    // Render session tabs from the current view window
+    for (let i = startIndex; i < endIndex; i++) {
         const sessionId = requests[i];
         const request = requestsData.requests[sessionId];
         const tab = createRequestTab(request);
         container.appendChild(tab);
     }
 
-    // Add overflow button if needed
-    if (overflowCount > 0) {
+    // Add overflow button if there are more tabs after
+    if (hasTabsAfter) {
+        const overflowCount = totalRequests - endIndex;
         const overflowBtn = document.createElement('button');
         overflowBtn.className = 'tabs-overflow-btn';
         overflowBtn.innerHTML = `+ ${overflowCount} more`;
@@ -480,12 +523,138 @@ function renderRequestTabs() {
         };
         container.appendChild(overflowBtn);
 
-        // Render overflow menu items
-        renderOverflowMenu(requests.slice(visibleCount));
+        // Render overflow menu items (all items not currently visible)
+        renderOverflowMenu(requests.slice(endIndex));
     }
+
+    // Update navigation buttons state
+    updateTabsNavButtons(hasTabsBefore, hasTabsAfter);
 
     // Update info bar
     updateRequestInfoBar();
+
+    // Update auto-follow button state
+    updateAutoFollowButton();
+}
+
+/**
+ * Toggle auto-follow mode for new requests
+ */
+function toggleAutoFollow() {
+    if (viewState.autoFollow) {
+        // Turn off
+        viewState.autoFollow = false;
+    } else {
+        // Turn on and jump to latest request
+        viewState.autoFollow = true;
+
+        // Select the most recent request if any exist
+        if (requestsData.orderedRequestIds.length > 0) {
+            const latestSessionId = requestsData.orderedRequestIds[requestsData.orderedRequestIds.length - 1];
+            viewState.selectedRequestId = latestSessionId;
+
+            // Clear overview mode and load content
+            ['preflight', 'generation', 'qa', 'consensus', 'gransabio'].forEach(phase => {
+                const contentEl = document.getElementById(`content-${phase}`);
+                if (contentEl) {
+                    delete contentEl.dataset.overviewMode;
+                }
+            });
+
+            loadRequestContent(latestSessionId);
+            renderIterationTimeline();
+            renderProjectStatus(lastProjectData, latestSessionId);
+        }
+    }
+
+    // Update UI
+    renderRequestTabs();
+    log(`Auto-follow ${viewState.autoFollow ? 'enabled' : 'disabled'}`, 'info');
+}
+
+/**
+ * Update the visual state of the auto-follow button
+ */
+function updateAutoFollowButton() {
+    const btn = document.getElementById('autoFollowBtn');
+    if (!btn) return;
+
+    if (viewState.autoFollow) {
+        btn.classList.add('active');
+        btn.innerHTML = 'Follow &#9654;';  // right arrow
+    } else {
+        btn.classList.remove('active');
+        btn.innerHTML = 'Follow';
+    }
+}
+
+/**
+ * Update the enabled/disabled state of tabs navigation buttons
+ * @param {boolean} hasTabsBefore - Whether there are tabs before the current view
+ * @param {boolean} hasTabsAfter - Whether there are tabs after the current view
+ */
+function updateTabsNavButtons(hasTabsBefore, hasTabsAfter) {
+    const leftBtn = document.getElementById('tabsNavLeft');
+    const rightBtn = document.getElementById('tabsNavRight');
+
+    if (leftBtn) {
+        leftBtn.disabled = !hasTabsBefore;
+    }
+    if (rightBtn) {
+        rightBtn.disabled = !hasTabsAfter;
+    }
+}
+
+/**
+ * Navigate tabs view to the left (show earlier tabs)
+ */
+function navigateTabsLeft() {
+    if (viewState.tabsViewOffset > 0) {
+        viewState.tabsViewOffset--;
+        renderRequestTabs();
+        log('Navigated tabs left', 'info');
+    }
+}
+
+/**
+ * Navigate tabs view to the right (show later tabs)
+ */
+function navigateTabsRight() {
+    const totalRequests = requestsData.orderedRequestIds.length;
+    const maxSessionTabs = MAX_VISIBLE_TABS - 1;
+    const maxOffset = Math.max(0, totalRequests - maxSessionTabs);
+
+    if (viewState.tabsViewOffset < maxOffset) {
+        viewState.tabsViewOffset++;
+        renderRequestTabs();
+        log('Navigated tabs right', 'info');
+    }
+}
+
+/**
+ * Ensure the selected request tab is visible in the current view window
+ * Adjusts the offset if necessary to bring the selected tab into view
+ * @param {string} sessionId - The session ID to ensure is visible
+ */
+function ensureTabVisible(sessionId) {
+    const requests = requestsData.orderedRequestIds;
+    const index = requests.indexOf(sessionId);
+
+    if (index === -1) return;
+
+    const maxSessionTabs = MAX_VISIBLE_TABS - 1;
+    const startIndex = viewState.tabsViewOffset;
+    const endIndex = startIndex + maxSessionTabs;
+
+    // Check if the tab is outside the current view
+    if (index < startIndex) {
+        // Tab is before the view - scroll left
+        viewState.tabsViewOffset = index;
+    } else if (index >= endIndex) {
+        // Tab is after the view - scroll right
+        viewState.tabsViewOffset = index - maxSessionTabs + 1;
+    }
+    // else: tab is already visible, no change needed
 }
 
 function createRequestTab(request) {
@@ -596,6 +765,9 @@ function selectOverview() {
     // Update UI
     renderRequestTabs();
 
+    // Hide iteration timeline in overview mode
+    renderIterationTimeline();
+
     // Clear streaming panels (show message instead)
     clearStreamingPanelsForOverview();
 
@@ -630,8 +802,14 @@ function selectRequest(sessionId) {
     viewState.selectedRequestId = sessionId;
     viewState.autoFollow = false;  // User manually selected, disable auto-follow
 
+    // Ensure the selected tab is visible in the view window
+    ensureTabVisible(sessionId);
+
     // Update tabs UI
     renderRequestTabs();
+
+    // Render iteration timeline for this session
+    renderIterationTimeline();
 
     // Load streaming content for this session
     loadRequestContent(sessionId);
@@ -671,6 +849,7 @@ function closeRequest(sessionId) {
             const newIndex = Math.max(0, index - 1);
             viewState.selectedRequestId = requestsData.orderedRequestIds[newIndex];
             loadRequestContent(viewState.selectedRequestId);
+            renderIterationTimeline();
             renderProjectStatus(lastProjectData, viewState.selectedRequestId);
         } else {
             // No more requests - go back to Overview mode
@@ -690,21 +869,42 @@ function loadRequestContent(sessionId) {
     const request = requestsData.requests[sessionId];
     if (!request) return;
 
+    // Load content from the iteration we're currently viewing
+    const iteration = request.viewingIteration || request.currentIteration;
+    const iterData = request.iterations[iteration];
+
+    if (!iterData) {
+        // No data for this iteration - clear panels
+        ['preflight', 'generation', 'qa', 'consensus', 'gransabio'].forEach(phase => {
+            const contentEl = document.getElementById(`content-${phase}`);
+            if (contentEl) contentEl.textContent = '';
+
+            const chunksEl = document.getElementById(`chunks-${phase}`);
+            const bytesEl = document.getElementById(`bytes-${phase}`);
+            if (chunksEl) chunksEl.textContent = '0';
+            if (bytesEl) bytesEl.textContent = '0';
+        });
+        return;
+    }
+
     // Load content into each phase panel (except status and everything)
     ['preflight', 'generation', 'qa', 'consensus', 'gransabio'].forEach(phase => {
         const contentEl = document.getElementById(`content-${phase}`);
         if (contentEl) {
-            contentEl.textContent = request.content[phase] || '';
+            contentEl.textContent = iterData.content[phase] || '';
             contentEl.scrollTop = contentEl.scrollHeight;
         }
 
         // Update stats display
-        const reqStats = request.stats[phase];
+        const phaseStats = iterData.stats[phase];
         const chunksEl = document.getElementById(`chunks-${phase}`);
         const bytesEl = document.getElementById(`bytes-${phase}`);
-        if (chunksEl) chunksEl.textContent = reqStats.chunks;
-        if (bytesEl) bytesEl.textContent = reqStats.bytes;
+        if (chunksEl) chunksEl.textContent = phaseStats.chunks;
+        if (bytesEl) bytesEl.textContent = phaseStats.bytes;
     });
+
+    // Update history mode visual indicators
+    updateHistoryModeIndicators(request);
 }
 
 function updateRequestInfoBar() {
@@ -783,9 +983,26 @@ function renderOverflowMenu(overflowRequests) {
 
 function toggleOverflowMenu() {
     const menu = document.getElementById('tabsOverflowMenu');
-    if (menu) {
-        menu.classList.toggle('hidden');
+    const overflowBtn = document.querySelector('.tabs-overflow-btn');
+
+    if (!menu) return;
+
+    const isHidden = menu.classList.contains('hidden');
+
+    if (isHidden && overflowBtn) {
+        // Position menu below the overflow button
+        const btnRect = overflowBtn.getBoundingClientRect();
+        menu.style.top = `${btnRect.bottom + 5}px`;
+        menu.style.left = `${btnRect.left}px`;
+
+        // Ensure menu doesn't go off-screen to the right
+        const menuWidth = 200; // min-width from CSS
+        if (btnRect.left + menuWidth > window.innerWidth) {
+            menu.style.left = `${window.innerWidth - menuWidth - 10}px`;
+        }
     }
+
+    menu.classList.toggle('hidden');
 }
 
 // ============================================
@@ -1124,19 +1341,17 @@ async function loadRecentProjects() {
         const data = await response.json();
 
         const projects = data.projects || [];
-        const standalone = data.standalone_sessions || [];
-        const totalCount = projects.length + standalone.length;
 
-        countEl.textContent = `${projects.length} projects, ${standalone.length} sessions`;
+        countEl.textContent = `${projects.length} projects`;
 
-        if (totalCount === 0) {
-            listEl.innerHTML = '<div class="empty-message">No active projects or sessions</div>';
+        if (projects.length === 0) {
+            listEl.innerHTML = '<div class="empty-message">No active projects</div>';
             return;
         }
 
         listEl.innerHTML = '';
 
-        // Render projects first
+        // Render projects (unified: project_id = session_id when not explicitly provided)
         projects.forEach(project => {
             const item = document.createElement('div');
             item.className = 'recent-item';
@@ -1145,7 +1360,7 @@ async function loadRecentProjects() {
 
             item.innerHTML = `
                 <div class="recent-info">
-                    <div class="recent-name">[PROJECT] ${escapeHtml(project.project_id)}</div>
+                    <div class="recent-name">${escapeHtml(project.project_id)}</div>
                     <div class="recent-meta">
                         Sessions: ${project.session_count} |
                         Active: ${project.active_sessions} |
@@ -1160,28 +1375,7 @@ async function loadRecentProjects() {
             listEl.appendChild(item);
         });
 
-        // Render standalone sessions
-        standalone.forEach(session => {
-            const item = document.createElement('div');
-            item.className = 'recent-item';
-
-            item.innerHTML = `
-                <div class="recent-info">
-                    <div class="recent-name">[SESSION] ${escapeHtml(session.request_name || 'Unnamed')}</div>
-                    <div class="recent-meta">
-                        Phase: ${session.phase || '?'} |
-                        Status: ${session.status || '?'}
-                    </div>
-                    <div class="recent-project-id" style="color: var(--amber);">${session.session_id}</div>
-                </div>
-                <button class="btn btn-connect btn-small" onclick="connectToSession('${session.session_id}')">
-                    Connect
-                </button>
-            `;
-            listEl.appendChild(item);
-        });
-
-        log(`Loaded ${projects.length} projects, ${standalone.length} standalone sessions`, 'success');
+        log(`Loaded ${projects.length} projects`, 'success');
 
     } catch (error) {
         log(`Failed to load active connections: ${error.message}`, 'error');
@@ -1190,20 +1384,10 @@ async function loadRecentProjects() {
 }
 
 // ============================================
-// CONNECTION (DUAL MODE)
+// CONNECTION
 // ============================================
 
-function connectToSession(sessionId) {
-    // For standalone sessions, we connect to /stream/{session_id} instead of project stream
-    currentConnectionMode = 'session';
-    currentSessionId = sessionId;
-    document.getElementById('projectIdInput').value = sessionId;
-    connect();
-}
-
 function connectToProject(projectId) {
-    currentConnectionMode = 'project';
-    currentSessionId = null;
     document.getElementById('projectIdInput').value = projectId;
     connect();
 }
@@ -1212,7 +1396,7 @@ function connect() {
     const inputValue = document.getElementById('projectIdInput').value.trim();
 
     if (!inputValue) {
-        log('Please enter a project ID or session ID', 'error');
+        log('Please enter a project ID', 'error');
         return;
     }
 
@@ -1224,30 +1408,15 @@ function connect() {
     clearAllContent();
     setConnectionStatus('connecting', 'CONNECTING...');
 
-    let streamUrl;
+    // Project mode - unified stream (project_id = session_id when not explicitly provided)
+    currentProjectId = inputValue;
 
-    if (currentConnectionMode === 'session') {
-        // Single session mode - simpler stream
-        currentProjectId = null;
-        currentSessionId = inputValue;
-        streamUrl = `${STREAM_BASE}/stream/${inputValue}`;
-        log(`Connecting to session stream: ${streamUrl}`, 'info');
+    const activePhases = getActivePhases();
+    const phasesParam = activePhases.length === HARD_SWITCHABLE_PHASES.length ? 'all' : activePhases.join(',');
+    const streamUrl = `${STREAM_BASE}/stream/project/${currentProjectId}?phases=${phasesParam}`;
 
-        // Hide multi-session UI elements in session mode
-        document.getElementById('requestTabsPanel').style.display = 'none';
-
-    } else {
-        // Project mode - full multiplexed stream
-        currentProjectId = inputValue;
-        currentSessionId = null;
-
-        const activePhases = getActivePhases();
-        const phasesParam = activePhases.length === HARD_SWITCHABLE_PHASES.length ? 'all' : activePhases.join(',');
-        streamUrl = `${STREAM_BASE}/stream/project/${currentProjectId}?phases=${phasesParam}`;
-
-        log(`Connecting to project stream: ${streamUrl}`, 'info');
-        updateUrl(inputValue);
-    }
+    log(`Connecting to project stream: ${streamUrl}`, 'info');
+    updateUrl(inputValue);
 
     try {
         eventSource = new EventSource(streamUrl);
@@ -1259,11 +1428,7 @@ function connect() {
         };
 
         eventSource.onmessage = function(event) {
-            if (currentConnectionMode === 'session') {
-                handleSessionMessage(event.data);
-            } else {
-                handleMessage(event.data);
-            }
+            handleMessage(event.data);
         };
 
         eventSource.onerror = function(error) {
@@ -1284,8 +1449,6 @@ function disconnect() {
     }
 
     currentProjectId = null;
-    currentSessionId = null;
-    currentConnectionMode = 'project';
     setConnectionStatus('disconnected', 'OFFLINE');
     PHASES.forEach(phase => setBadge(phase, 'idle'));
     updateUrl(null);
@@ -1356,19 +1519,26 @@ function handleChunk(data) {
     const request = processRequestFromEvent(data);
 
     // Normalize phase name: gran_sabio -> gransabio (match HTML element IDs)
-    let phase = data.phase || 'generation';
-    if (phase === 'gran_sabio') {
-        phase = 'gransabio';
-    }
+    let phase = normalizePhaseName(data.phase, 'generation');
     const content = data.content || '';
 
     if (!content) return;
 
-    // Store content in request's data structure (for phases we track)
-    if (request && phase !== 'status' && request.content.hasOwnProperty(phase)) {
-        request.content[phase] = (request.content[phase] || '') + content;
-        request.stats[phase].chunks++;
-        request.stats[phase].bytes += content.length;
+    // Store content in request's iteration-specific data structure
+    if (request && phase !== 'status') {
+        const iteration = request.currentIteration;
+
+        // Ensure iteration exists
+        initializeIteration(request, iteration);
+
+        const iterData = request.iterations[iteration];
+
+        // Store in the correct iteration
+        if (iterData.content.hasOwnProperty(phase)) {
+            iterData.content[phase] += content;
+            iterData.stats[phase].chunks++;
+            iterData.stats[phase].bytes += content.length;
+        }
     }
 
     // In Overview mode: don't display in panels, but show generic activity
@@ -1382,7 +1552,13 @@ function handleChunk(data) {
 
     // Session mode: display only if this is the selected request
     if (request && request.sessionId === viewState.selectedRequestId) {
-        appendContent(phase, content);
+        // Only show content if viewing the current iteration
+        if (request.viewingIteration === request.currentIteration) {
+            appendContent(phase, content);
+        } else {
+            // Viewing history - show activity indicator that live data is coming
+            showLiveActivityIndicator(request.currentIteration);
+        }
     } else if (!request) {
         // No session_id in data - still show (legacy behavior)
         appendContent(phase, content);
@@ -1390,6 +1566,16 @@ function handleChunk(data) {
 
     // Note: 'everything' panel receives all content via handleMessage
     // before this function is called, so it remains unfiltered
+}
+
+function normalizePhaseName(phase, fallback) {
+    if (!phase) {
+        return fallback;
+    }
+    if (phase === 'gran_sabio') {
+        return 'gransabio';
+    }
+    return phase;
 }
 
 function handleStatusSnapshot(data) {
@@ -1417,27 +1603,70 @@ Sessions: ${summary.total || 0} total, ${summary.active || 0} active, ${summary.
 }
 
 function handleStatusChange(data) {
-    // Update request tracking from status change
-    const request = processRequestFromEvent(data);
-    if (request) {
-        // Update request state from status change event
-        if (data.iteration !== undefined) {
-            request.currentIteration = data.iteration;
-        }
-        if (data.status) {
-            request.status = data.status;
-        }
-        if (data.score !== undefined) {
-            request.finalScore = data.score;
-        }
-
-        // Re-render tabs to show updated status
-        renderRequestTabs();
-    }
-
-    // Project dashboard update (existing logic)
     const project = data.project || {};
+    const sessions = project.sessions || [];
     const triggeredBy = data.trigger_session?.slice(0, 8) || '?';
+
+    // Process each session from the project status
+    sessions.forEach(sessionData => {
+        const sessionId = sessionData.session_id;
+        if (!sessionId) return;
+
+        // Get or create request
+        let request = requestsData.requests[sessionId];
+        if (!request) {
+            // Create request from status_change data
+            request = {
+                sessionId: sessionId,
+                requestName: sessionData.request_name || 'unknown',
+                status: 'active',
+                currentIteration: 1,
+                viewingIteration: 1,
+                autoFollowIteration: true,
+                maxIterations: sessionData.max_iterations || 5,
+                finalScore: null,
+                iterations: {}
+            };
+            requestsData.requests[sessionId] = request;
+            requestsData.orderedRequestIds.push(sessionId);
+            initializeIteration(request, 1);
+        }
+
+        // DETECT ITERATION CHANGE
+        const newIteration = sessionData.iteration || 1;
+        const oldIteration = request.currentIteration;
+
+        if (newIteration !== oldIteration) {
+            // Iteration changed!
+            handleIterationChange(request, oldIteration, newIteration, sessionData);
+        }
+
+        // Update request state
+        if (sessionData.status) {
+            request.status = sessionData.status;
+        }
+        if (sessionData.max_iterations) {
+            request.maxIterations = sessionData.max_iterations;
+        }
+
+        // Update score of current iteration if consensus data available
+        if (sessionData.consensus && sessionData.consensus.last_score !== null) {
+            const iterData = request.iterations[request.currentIteration];
+            if (iterData) {
+                iterData.score = sessionData.consensus.last_score;
+                iterData.approved = sessionData.consensus.approved || false;
+            }
+        }
+
+        // Update final score for completed sessions
+        if (sessionData.status === 'completed' && sessionData.consensus) {
+            request.finalScore = sessionData.consensus.last_score;
+        }
+    });
+
+    // Re-render UI components
+    renderRequestTabs();
+    renderIterationTimeline();
 
     // Re-render visual dashboard with updated data
     renderProjectStatus(project);
@@ -1450,66 +1679,323 @@ function handleStatusChange(data) {
     }
 }
 
+/**
+ * Handle iteration change - finalize old iteration and prepare new one
+ * @param {Object} request - The request object
+ * @param {number} oldIteration - Previous iteration number
+ * @param {number} newIteration - New iteration number
+ * @param {Object} sessionData - Session data from status_change event
+ */
+function handleIterationChange(request, oldIteration, newIteration, sessionData) {
+    log(`Iteration changed: ${oldIteration} -> ${newIteration}`, 'info');
+
+    // 1. Finalize old iteration
+    const oldIterData = request.iterations[oldIteration];
+    if (oldIterData) {
+        oldIterData.timestampEnd = Date.now();
+        oldIterData.status = oldIterData.approved ? 'approved' : 'rejected';
+
+        // Save score from session data if available
+        if (sessionData.consensus && sessionData.consensus.last_score !== null) {
+            oldIterData.score = sessionData.consensus.last_score;
+        }
+    }
+
+    // 2. Create new iteration
+    initializeIteration(request, newIteration);
+
+    // 3. Update current iteration
+    request.currentIteration = newIteration;
+
+    // 4. Auto-follow if enabled
+    if (request.autoFollowIteration) {
+        request.viewingIteration = newIteration;
+
+        // Clear panels for new iteration if this is the selected request
+        if (request.sessionId === viewState.selectedRequestId) {
+            clearPanelsForNewIteration();
+        }
+    }
+
+    // 5. Re-render timeline
+    renderIterationTimeline();
+}
+
+/**
+ * Clear all streaming panels when starting a new iteration
+ */
+function clearPanelsForNewIteration() {
+    ['preflight', 'generation', 'qa', 'consensus', 'gransabio'].forEach(phase => {
+        const contentEl = document.getElementById(`content-${phase}`);
+        if (contentEl) {
+            contentEl.textContent = '';
+        }
+        // Reset stats display
+        const chunksEl = document.getElementById(`chunks-${phase}`);
+        const bytesEl = document.getElementById(`bytes-${phase}`);
+        if (chunksEl) chunksEl.textContent = '0';
+        if (bytesEl) bytesEl.textContent = '0';
+    });
+}
+
+
 // ============================================
-// MESSAGE HANDLING (SESSION MODE)
+// ITERATION TIMELINE
 // ============================================
 
-function handleSessionMessage(rawData) {
-    // Always append to "everything" panel
-    appendContent('everything', rawData + '\n');
+/**
+ * Render the iteration timeline for the currently selected request
+ */
+function renderIterationTimeline() {
+    const timeline = document.getElementById('iterationTimeline');
+    const container = document.getElementById('iterationContainer');
 
-    try {
-        const data = JSON.parse(rawData);
+    if (!timeline || !container) return;
 
-        // Session stream format is different from project stream
-        // It sends ProgressUpdate objects
+    // Only show if a session is selected (not Overview mode)
+    if (isOverviewMode()) {
+        timeline.classList.add('hidden');
+        return;
+    }
 
-        if (data.status) {
-            const statusStr = data.status.value || data.status;
-            appendContent('status', `[STATUS] ${statusStr}\n`);
+    const request = requestsData.requests[viewState.selectedRequestId];
+    if (!request) {
+        timeline.classList.add('hidden');
+        return;
+    }
+
+    timeline.classList.remove('hidden');
+    container.innerHTML = '';
+
+    // Create pills for each iteration
+    for (let i = 1; i <= request.maxIterations; i++) {
+        const pill = createIterationPill(request, i);
+        container.appendChild(pill);
+
+        // Add connector if not the last iteration
+        if (i < request.maxIterations) {
+            const connector = document.createElement('span');
+            connector.className = 'iteration-connector';
+            connector.textContent = '---';
+            container.appendChild(connector);
         }
+    }
 
-        if (data.generated_content) {
-            // Full content replacement
-            const genContent = document.getElementById('content-generation');
-            if (genContent) {
-                genContent.textContent = data.generated_content;
-                genContent.scrollTop = genContent.scrollHeight;
-            }
-            showReceiving('generation');
-        }
+    // Update navigation buttons
+    updateIterationNavButtons(request);
+}
 
-        if (data.qa_feedback) {
-            const qaContent = document.getElementById('content-qa');
-            if (qaContent) {
-                qaContent.textContent = JSON.stringify(data.qa_feedback, null, 2);
-            }
-            showReceiving('qa');
-        }
+/**
+ * Create a single iteration pill element
+ * @param {Object} request - The request object
+ * @param {number} iteration - The iteration number
+ * @returns {HTMLElement} The pill element
+ */
+function createIterationPill(request, iteration) {
+    const pill = document.createElement('div');
+    pill.className = 'iteration-pill';
+    pill.dataset.iteration = iteration;
 
-        if (data.verbose_log && Array.isArray(data.verbose_log)) {
-            data.verbose_log.forEach(logEntry => {
-                log(logEntry, 'event');
-            });
-        }
+    const iterData = request.iterations[iteration];
+    const isCurrent = iteration === request.currentIteration;
+    const isViewing = iteration === request.viewingIteration;
+    const isPending = !iterData;
 
-        // Update status panel with iteration info
-        if (data.current_iteration !== undefined) {
-            appendContent('status', `Iteration: ${data.current_iteration}/${data.max_iterations || '?'}\n`);
-        }
+    // Determine status and score
+    let status = 'pending';
+    let score = '--';
 
-        // Check for completion
-        const statusStr = data.status?.value || data.status;
-        if (statusStr === 'completed' || statusStr === 'failed' || statusStr === 'cancelled') {
-            log(`Session ended: ${statusStr}`, 'warn');
-            setConnectionStatus('disconnected', statusStr.toUpperCase());
-        }
+    if (iterData) {
+        status = iterData.status;
+        score = iterData.score !== null ? iterData.score.toFixed(1) : '...';
+    }
 
-    } catch (parseError) {
-        log(`Parse error: ${parseError.message}`, 'warn');
-        appendContent('status', rawData + '\n');
+    // Apply state classes
+    if (isPending) {
+        pill.classList.add('pending');
+    } else if (status === 'approved') {
+        pill.classList.add('completed-pass');
+    } else if (status === 'rejected') {
+        pill.classList.add('completed-fail');
+    } else if (status === 'in_progress') {
+        pill.classList.add('in-progress');
+    }
+
+    if (isViewing) {
+        pill.classList.add('viewing');
+    }
+
+    // Build content
+    const liveIndicator = isCurrent && status === 'in_progress' ? '<span class="live-dot"></span>' : '';
+    const statusLabel = status === 'approved' ? 'PASS' :
+                       status === 'rejected' ? 'FAIL' :
+                       status === 'in_progress' ? 'LIVE' : 'PEND';
+
+    pill.innerHTML = `
+        <div class="pill-header">ITER ${iteration} ${liveIndicator}</div>
+        <div class="pill-score">${score}</div>
+        <div class="pill-status">${statusLabel}</div>
+    `;
+
+    // Click handler (only for iterations with data)
+    if (!isPending) {
+        pill.onclick = () => selectIteration(request.sessionId, iteration);
+    }
+
+    return pill;
+}
+
+/**
+ * Select a specific iteration to view
+ * @param {string} sessionId - The session ID
+ * @param {number} iteration - The iteration number to view
+ */
+function selectIteration(sessionId, iteration) {
+    const request = requestsData.requests[sessionId];
+    if (!request) return;
+
+    request.viewingIteration = iteration;
+    request.autoFollowIteration = (iteration === request.currentIteration);
+
+    // Reload content for this iteration
+    loadRequestContent(sessionId);
+
+    // Re-render timeline
+    renderIterationTimeline();
+
+    log(`Viewing iteration ${iteration}`, 'info');
+}
+
+/**
+ * Navigate to live (current) iteration
+ */
+function goToLiveIteration() {
+    if (isOverviewMode()) return;
+
+    const request = requestsData.requests[viewState.selectedRequestId];
+    if (!request) return;
+
+    request.viewingIteration = request.currentIteration;
+    request.autoFollowIteration = true;
+
+    loadRequestContent(request.sessionId);
+    renderIterationTimeline();
+
+    log('Switched to live iteration', 'info');
+}
+
+/**
+ * Navigate to previous or next iteration
+ * @param {number} direction - -1 for previous, 1 for next
+ */
+function navigateIteration(direction) {
+    if (isOverviewMode()) return;
+
+    const request = requestsData.requests[viewState.selectedRequestId];
+    if (!request) return;
+
+    const newIteration = request.viewingIteration + direction;
+
+    // Validate bounds
+    if (newIteration < 1 || newIteration > request.currentIteration) return;
+
+    selectIteration(request.sessionId, newIteration);
+}
+
+/**
+ * Update the enabled/disabled state of navigation buttons
+ * @param {Object} request - The request object
+ */
+function updateIterationNavButtons(request) {
+    const prevBtn = document.getElementById('iterPrevBtn');
+    const nextBtn = document.getElementById('iterNextBtn');
+    const liveBtn = document.getElementById('iterLiveBtn');
+
+    if (!prevBtn || !nextBtn || !liveBtn) return;
+
+    const viewing = request.viewingIteration;
+    const current = request.currentIteration;
+
+    prevBtn.disabled = viewing <= 1;
+    nextBtn.disabled = viewing >= current;
+
+    // Live button appearance
+    if (viewing === current) {
+        liveBtn.classList.add('active');
+        liveBtn.textContent = 'Live';
+    } else {
+        liveBtn.classList.remove('active');
+        liveBtn.textContent = 'Go Live';
     }
 }
+
+/**
+ * Update history mode visual indicators on stream panels
+ * @param {Object} request - The request object
+ */
+function updateHistoryModeIndicators(request) {
+    const isHistoryMode = request.viewingIteration !== request.currentIteration;
+
+    ['preflight', 'generation', 'qa', 'consensus', 'gransabio'].forEach(phase => {
+        const panel = document.querySelector(`.stream-panel[data-phase="${phase}"]`);
+        if (!panel) return;
+
+        if (isHistoryMode) {
+            panel.classList.add('history-mode');
+
+            // Add iteration badge if it doesn't exist
+            let iterBadge = panel.querySelector('.iter-badge');
+            const header = panel.querySelector('.stream-header');
+            const streamBadge = panel.querySelector('.stream-badge');
+
+            if (!iterBadge && header && streamBadge) {
+                iterBadge = document.createElement('span');
+                iterBadge.className = 'iter-badge';
+                header.insertBefore(iterBadge, streamBadge);
+            }
+            if (iterBadge) {
+                iterBadge.textContent = `ITER ${request.viewingIteration}`;
+            }
+
+            // Add history badge if it doesn't exist
+            let historyBadge = panel.querySelector('.history-badge');
+            if (!historyBadge && header && streamBadge) {
+                historyBadge = document.createElement('span');
+                historyBadge.className = 'history-badge';
+                historyBadge.textContent = 'HISTORY';
+                header.insertBefore(historyBadge, streamBadge);
+            }
+        } else {
+            panel.classList.remove('history-mode');
+
+            // Remove badges
+            const iterBadge = panel.querySelector('.iter-badge');
+            const historyBadge = panel.querySelector('.history-badge');
+            if (iterBadge) iterBadge.remove();
+            if (historyBadge) historyBadge.remove();
+        }
+    });
+}
+
+/**
+ * Show activity indicator when live data arrives while viewing history
+ * @param {number} iteration - The iteration receiving live data
+ */
+function showLiveActivityIndicator(iteration) {
+    const timeline = document.getElementById('iterationTimeline');
+    if (!timeline) return;
+
+    const pill = timeline.querySelector(`[data-iteration="${iteration}"]`);
+    if (pill && !pill.classList.contains('has-activity')) {
+        pill.classList.add('has-activity');
+
+        // Remove after animation
+        setTimeout(() => {
+            pill.classList.remove('has-activity');
+        }, 300);
+    }
+}
+
 
 // ============================================
 // INITIALIZATION
@@ -1523,6 +2009,17 @@ document.addEventListener('DOMContentLoaded', function() {
     initToggleListeners();
     log('Phase toggle switches ready', 'info');
 
+    // Initialize tabs navigation buttons
+    const tabsNavLeft = document.getElementById('tabsNavLeft');
+    const tabsNavRight = document.getElementById('tabsNavRight');
+    if (tabsNavLeft) {
+        tabsNavLeft.addEventListener('click', navigateTabsLeft);
+    }
+    if (tabsNavRight) {
+        tabsNavRight.addEventListener('click', navigateTabsRight);
+    }
+    log('Tabs navigation ready', 'info');
+
     // Load active connections
     loadRecentProjects();
 
@@ -1531,7 +2028,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (urlProject) {
         log(`Found project in URL: ${urlProject}`, 'info');
         document.getElementById('projectIdInput').value = urlProject;
-        currentConnectionMode = 'project';
         // Auto-connect after a short delay
         setTimeout(() => connect(), 500);
     }
@@ -1539,15 +2035,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Allow Enter key to connect
     document.getElementById('projectIdInput').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
-            // Determine mode based on input format (UUIDs are typically sessions)
-            const value = e.target.value.trim();
-            if (value.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-                // Looks like a UUID - treat as session
-                currentConnectionMode = 'session';
-            } else {
-                // Treat as project ID
-                currentConnectionMode = 'project';
-            }
+            // Unified: project_id = session_id when not explicitly provided
             connect();
         }
     });
