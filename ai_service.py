@@ -1016,8 +1016,9 @@ class AIService:
                 )
 
         # Select appropriate system prompt based on content type if not explicitly provided
+        # Use RAW prompt when json_output=True to avoid conflict with "prose only" instruction
         if system_prompt is None:
-            if content_type in {"other", "json"}:
+            if content_type in {"other", "json"} or json_output:
                 system_prompt = config.GENERATOR_SYSTEM_PROMPT_RAW
             else:
                 system_prompt = config.GENERATOR_SYSTEM_PROMPT
@@ -1726,8 +1727,9 @@ class AIService:
             )
 
         # Select appropriate system prompt based on content type if not explicitly provided
+        # Use RAW prompt when json_output=True to avoid conflict with "prose only" instruction
         if system_prompt is None:
-            if content_type in {"other", "json"}:
+            if content_type in {"other", "json"} or json_output:
                 system_prompt = config.GENERATOR_SYSTEM_PROMPT_RAW
             else:
                 system_prompt = config.GENERATOR_SYSTEM_PROMPT

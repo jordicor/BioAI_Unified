@@ -81,6 +81,7 @@ backups/
 test_outputs/
 docs/
 *.test
+.coverage
 
 # Database files
 *.db
