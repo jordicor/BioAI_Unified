@@ -533,6 +533,207 @@ class LexicalDiversityConfig(BaseModel):
             order=order,
         )
 
+
+# =============================================================================
+# EVIDENCE GROUNDING MODELS
+# Based on Strawberry/Pythea project (MIT License)
+# https://github.com/leochlon/pythea
+# =============================================================================
+
+class EvidenceGroundingConfig(BaseModel):
+    """Configuration for evidence grounding verification using logprobs.
+
+    This feature detects procedural hallucination (confabulation) by measuring
+    whether the model actually relied on cited evidence. If removing evidence
+    doesn't reduce model confidence, the model likely confabulated.
+    """
+
+    enabled: bool = Field(default=False, description="Enable evidence grounding verification")
+    model: Optional[str] = Field(
+        default=None,
+        description="[DEPRECATED] Override model for BOTH extraction and scoring. "
+                    "If None, uses separate optimized models: "
+                    "EVIDENCE_GROUNDING_EXTRACTION_MODEL (gpt-5-nano, cheap) for claim extraction, "
+                    "EVIDENCE_GROUNDING_SCORING_MODEL (gpt-4o-mini, logprobs) for budget scoring. "
+                    "Only set this to force a single model for both phases."
+    )
+
+    # Claim extraction settings
+    max_claims: int = Field(default=15, ge=1, le=50, description="Maximum claims to extract")
+    filter_trivial: bool = Field(default=True, description="Filter non-substantive claims")
+    min_claim_importance: float = Field(
+        default=0.6, ge=0.0, le=1.0,
+        description="Minimum importance score (0-1) to keep a claim"
+    )
+
+    # Budget thresholds
+    target_confidence: float = Field(
+        default=0.95, ge=0.5, le=0.99,
+        description="Expected reliability of claims for budget calculation"
+    )
+    budget_gap_threshold: float = Field(
+        default=0.5, ge=0.0,
+        description="Flag claims with budget gap above this (in bits)"
+    )
+
+    # Behavior on failure
+    on_flag: Literal["warn", "deal_breaker", "regenerate"] = Field(
+        default="warn",
+        description="Action when flagged claims exceed threshold"
+    )
+    max_flagged_claims: int = Field(
+        default=2, ge=1,
+        description="Trigger action when this many claims are flagged"
+    )
+
+    # Layer ordering (Phase 5)
+    order: Optional[int] = Field(
+        default=None,
+        description="Execution order relative to QA layers. "
+                    "If None, auto-calculated based on on_flag: "
+                    "deal_breaker/regenerate -> 0 (fail-fast first), "
+                    "warn -> 999 (verification-only at end)"
+    )
+
+    # Advanced settings
+    top_logprobs: int = Field(default=10, ge=1, le=20, description="Top logprobs to request")
+    placeholder_text: str = Field(
+        default="[EVIDENCE REMOVED]",
+        description="Text to replace cited evidence with for pseudo-prior calculation"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "enabled": True,
+                "model": None,  # Uses optimized dual-model: gpt-5-nano (extraction) + gpt-4o-mini (scoring)
+                "filter_trivial": True,
+                "budget_gap_threshold": 0.5,
+                "on_flag": "deal_breaker",
+                "max_flagged_claims": 2,
+                "order": None  # Auto: deal_breaker/regenerate -> 0, warn -> 999
+            }
+        }
+
+
+class SpanType(str, Enum):
+    """Classification of evidence span content type.
+
+    Used by EvidenceMatcher to categorize spans for verification:
+    - Only ASSERTION spans can entail facts
+    - QUESTION/INSTRUCTION spans are masked during verification
+    - EMPTY spans are ignored
+    """
+    ASSERTION = "assertion"      # Declarative statements that can entail facts
+    QUESTION = "question"        # Interrogative content (cannot entail)
+    INSTRUCTION = "instruction"  # Prompts/commands (cannot entail)
+    EMPTY = "empty"              # No meaningful content
+
+
+class EvidenceSpan(BaseModel):
+    """A labeled span of evidence text for grounding verification.
+
+    Spans are chunks of the original context, labeled with IDs (S0, S1, etc.)
+    for citation tracking. Used by EvidenceMatcher and BudgetScorer.
+    """
+    id: str = Field(..., description="Span identifier (e.g., 'S0', 'S1')")
+    text: str = Field(..., description="The actual text content of the span")
+    span_type: SpanType = Field(
+        default=SpanType.ASSERTION,
+        description="Classification of the span content type"
+    )
+    start_char: int = Field(..., ge=0, description="Start character offset in original context")
+    end_char: int = Field(..., ge=0, description="End character offset in original context")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "S0",
+                "text": "Marie Curie was born in Warsaw in 1867.",
+                "span_type": "assertion",
+                "start_char": 0,
+                "end_char": 41
+            }
+        }
+
+
+class ExtractedClaim(BaseModel):
+    """A single verifiable claim extracted from generated content."""
+
+    idx: int = Field(..., ge=0, description="Claim index")
+    claim: str = Field(..., max_length=300, description="The claim text")
+    kind: Literal["factual", "inference", "opinion", "trivial"] = Field(
+        ..., description="Classification of the claim type"
+    )
+    importance: float = Field(..., ge=0.0, le=1.0, description="Importance score (0-1)")
+    cited_spans: List[str] = Field(
+        default_factory=list,
+        description="Span IDs this claim references (e.g., ['S0', 'S2'])"
+    )
+    source_text: str = Field(default="", description="Original text segment containing claim")
+
+
+class ClaimBudgetResult(BaseModel):
+    """Budget analysis result for a single claim."""
+
+    idx: int = Field(..., description="Claim index")
+    claim: str = Field(..., description="The claim text")
+    cited_spans: List[str] = Field(default_factory=list, description="Referenced span IDs")
+
+    # Probabilities
+    posterior_yes: float = Field(
+        ..., ge=0.0, le=1.0,
+        description="P(YES | full_context) - confidence with evidence"
+    )
+    prior_yes: float = Field(
+        ..., ge=0.0, le=1.0,
+        description="P(YES | context_without_evidence) - confidence without evidence"
+    )
+
+    # Budget metrics (in bits/nats)
+    required_bits: float = Field(..., description="KL(target || prior) - information needed")
+    observed_bits: float = Field(..., description="KL(posterior || prior) - information provided")
+    budget_gap: float = Field(..., description="required - observed; positive = deficit")
+
+    # Verdict
+    flagged: bool = Field(..., description="Whether this claim is flagged for insufficient grounding")
+    confidence_delta: float = Field(
+        ...,
+        description="posterior - prior; intuitive measure of evidence impact"
+    )
+
+
+class EvidenceGroundingResult(BaseModel):
+    """Complete result of evidence grounding verification."""
+
+    enabled: bool = Field(..., description="Whether grounding was enabled")
+    model_used: str = Field(..., description="Model used for verification")
+
+    # Claim analysis counts
+    total_claims_extracted: int = Field(..., ge=0, description="Total claims found in content")
+    claims_after_filter: int = Field(..., ge=0, description="Claims remaining after trivial filter")
+    claims_verified: int = Field(..., ge=0, description="Claims actually verified with logprobs")
+
+    # Results
+    claims: List[ClaimBudgetResult] = Field(
+        default_factory=list,
+        description="Detailed results per claim"
+    )
+    flagged_claims: int = Field(..., ge=0, description="Number of claims flagged")
+    max_budget_gap: float = Field(..., description="Maximum budget gap across all claims")
+
+    # Verdict
+    passed: bool = Field(..., description="Whether verification passed overall")
+    triggered_action: Optional[str] = Field(
+        default=None,
+        description="Action triggered if failed: 'warn', 'deal_breaker', or 'regenerate'"
+    )
+
+    # Diagnostics
+    verification_time_ms: float = Field(..., ge=0.0, description="Verification time in milliseconds")
+    tokens_used: int = Field(..., ge=0, description="Total tokens consumed for verification")
+
+
 class ContextDocumentRef(BaseModel):
     """Reference to a previously uploaded attachment for context injection."""
 
@@ -761,7 +962,13 @@ class ContentRequest(BaseModel):
         default=None,
         description="Lexical diversity QA configuration"
     )
-    
+
+    # Evidence grounding configuration
+    evidence_grounding: Optional[EvidenceGroundingConfig] = Field(
+        default=None,
+        description="Evidence grounding verification configuration (logprob-based claim verification)"
+    )
+
     # Cost tracking configuration
     show_query_costs: int = Field(
         default=0,
@@ -949,6 +1156,14 @@ class ContentRequest(BaseModel):
                         "deal_breaker_on_red": True,
                         "deal_breaker_on_amber": False
                     }
+                },
+                "evidence_grounding": {
+                    "enabled": True,
+                    "model": "gpt-4o-mini",
+                    "filter_trivial": True,
+                    "budget_gap_threshold": 0.5,
+                    "on_flag": "warn",
+                    "max_flagged_claims": 2
                 },
                 "json_schema": {
                     "type": "object",

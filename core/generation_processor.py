@@ -142,6 +142,27 @@ def build_context_prompt(manager: AttachmentManager, attachments: List[ResolvedA
     return context_header + '\n\n' + '\n\n'.join(blocks)
 
 
+def _build_grounding_context(request: ContentRequest, context_prompt: str = "") -> str:
+    """Build the context string for evidence grounding verification.
+
+    Combines the user prompt with any resolved attachment content to provide
+    the full context against which claims will be verified.
+
+    Args:
+        request: The content generation request
+        context_prompt: Pre-built context from resolved attachments (from build_context_prompt)
+
+    Returns:
+        Combined context string for evidence grounding
+    """
+    parts = [request.prompt]
+
+    if context_prompt:
+        parts.append(f"\n\n=== CONTEXT DOCUMENTS ===\n{context_prompt}")
+
+    return "\n\n".join(parts)
+
+
 def _estimate_image_tokens(width: int, height: int, detail: Optional[str] = None) -> int:
     """
     Estimate image tokens using a conservative formula.
@@ -1375,6 +1396,7 @@ ITERATION CONTEXT:
                         "final_score": 0.0,
                         "approved": False,
                         "failure_reason": error_msg,
+                        "evidence_grounding": None,
                         "generated_at": datetime.now().isoformat()
                     }
                     _attach_json_guard_metadata(session, final_result, request)
@@ -1574,6 +1596,7 @@ ITERATION CONTEXT:
                                 "final_score": 0.0,
                                 "approved": False,
                                 "failure_reason": failure_reason,
+                                "evidence_grounding": None,
                                 "generated_at": datetime.now().isoformat()
                             }
                             _attach_json_guard_metadata(session, final_result, request)
@@ -1621,10 +1644,12 @@ ITERATION CONTEXT:
                     phase_logger._exit_phase(Phase.GENERATION)
                     continue
 
-            # Check if QA evaluation should be bypassed (empty qa_layers)
+            # Check if QA evaluation should be bypassed (empty qa_layers AND no grounding)
             preflight_result = session.get("preflight_result")
             qa_layers_to_use = prepare_qa_layers_with_word_count(request, preflight_result)
-            if not qa_layers_to_use:
+            grounding_config = getattr(request, 'evidence_grounding', None)
+            grounding_enabled = grounding_config and grounding_config.enabled
+            if not qa_layers_to_use and not grounding_enabled:
                 await add_verbose_log(session_id, "⚡ Bypassing QA evaluation (no layers configured) - approving content directly")
 
                 # Enter COMPLETION phase for QA bypassed scenario
@@ -1645,6 +1670,7 @@ ITERATION CONTEXT:
                         "deal_breakers": [],
                         "qa_bypassed": True
                     },
+                    "evidence_grounding": None,  # Grounding not enabled
                     "generated_at": datetime.now().isoformat()
                 }
                 _attach_json_guard_metadata(session, final_result, request)
@@ -1690,8 +1716,81 @@ ITERATION CONTEXT:
             # Track which model/layer combination was last seen for completion tracking
             qa_last_seen = {"model": None, "layer": None}
 
-            async def qa_stream_callback(chunk: str, model: str, layer: str):
-                """Capture QA AI responses chunk-by-chunk for real-time streaming"""
+            async def qa_stream_callback(data, model: str = None, layer: str = None):
+                """
+                Unified callback for QA streaming that handles both:
+                - Text chunks from semantic QA evaluations (data=chunk_str, model, layer)
+                - Structured events from evidence grounding (data=dict with type='grounding_phase')
+
+                This allows the grounding engine to emit structured events while maintaining
+                backward compatibility with the existing QA evaluation streaming.
+                """
+                project_id = session.get("project_id")
+
+                # Handle grounding events (dict format from grounding_engine.py)
+                if isinstance(data, dict) and data.get("type") == "grounding_phase":
+                    grounding_phase = data.get("phase", "unknown")
+                    grounding_status = data.get("status", "update")
+
+                    # Build descriptive message for verbose log
+                    if grounding_phase == "claim_extraction":
+                        if grounding_status == "started":
+                            log_msg = "[Evidence Grounding] Extracting claims from content..."
+                        elif grounding_status == "completed":
+                            total = data.get("total_extracted", 0)
+                            after_filter = data.get("after_filter", 0)
+                            log_msg = f"[Evidence Grounding] Extracted {total} claims, {after_filter} after filtering"
+                        else:
+                            log_msg = f"[Evidence Grounding] Claim extraction: {grounding_status}"
+                    elif grounding_phase == "budget_scoring":
+                        if grounding_status == "started":
+                            claims_count = data.get("claims_to_verify", 0)
+                            log_msg = f"[Evidence Grounding] Scoring {claims_count} claims with logprobs..."
+                        elif grounding_status == "completed":
+                            flagged = data.get("flagged_claims", 0)
+                            max_gap = data.get("max_budget_gap", 0.0)
+                            passed = data.get("passed", True)
+                            status_str = "PASSED" if passed else "FAILED"
+                            log_msg = f"[Evidence Grounding] {status_str}: {flagged} claims flagged, max gap={max_gap:.2f} bits"
+                        else:
+                            log_msg = f"[Evidence Grounding] Budget scoring: {grounding_status}"
+                    else:
+                        log_msg = f"[Evidence Grounding] {grounding_phase}: {grounding_status}"
+
+                    # Add to verbose log
+                    await add_verbose_log(session_id, log_msg)
+
+                    # Publish structured event to project stream
+                    if project_id:
+                        # Build event type: grounding_<phase>_<status>
+                        event_type = f"grounding_{grounding_phase}_{grounding_status}"
+
+                        # Include grounding-specific data in the content field as JSON
+                        import json_utils as json
+                        grounding_content = json.dumps({
+                            "grounding_phase": grounding_phase,
+                            "grounding_status": grounding_status,
+                            "total_extracted": data.get("total_extracted"),
+                            "after_filter": data.get("after_filter"),
+                            "claims_to_verify": data.get("claims_to_verify"),
+                            "flagged_claims": data.get("flagged_claims"),
+                            "max_budget_gap": data.get("max_budget_gap"),
+                            "passed": data.get("passed"),
+                        })
+
+                        await publish_project_phase_chunk(
+                            project_id,
+                            "qa",  # Grounding is part of QA phase
+                            grounding_content,
+                            session_id=session_id,
+                            request_name=session.get("request_name"),
+                            event=event_type,
+                        )
+                    return
+
+                # Handle QA text chunks (existing behavior)
+                chunk = data  # data is the chunk string in this case
+
                 # Track completion when model/layer changes
                 if qa_last_seen["model"] is not None and qa_last_seen["layer"] is not None:
                     if qa_last_seen["model"] != model or qa_last_seen["layer"] != layer:
@@ -1715,7 +1814,6 @@ ITERATION CONTEXT:
                 # Append to QA content for QA stream
                 current_qa = session.get("qa_content", "")
                 session["qa_content"] = current_qa + formatted_chunk
-                project_id = session.get("project_id")
                 if project_id and formatted_chunk:
                     await publish_project_phase_chunk(
                         project_id,
@@ -1852,6 +1950,8 @@ ITERATION CONTEXT:
                             marker_length=marker_length,
                             word_map_formatted=word_map_formatted,
                             input_images=qa_input_images,
+                            evidence_grounding_config=getattr(request, 'evidence_grounding', None),
+                            context_for_grounding=_build_grounding_context(request, context_prompt),
                         ),
                         timeout=comprehensive_timeout  # Dynamic timeout based on models and reasoning
                     )
@@ -1951,6 +2051,7 @@ ITERATION CONTEXT:
                         "approved": False,
                         "failure_reason": str(qa_model_err),
                         "qa_summary": {},
+                        "evidence_grounding": None,
                         "generated_at": datetime.now().isoformat()
                     }
                     _attach_json_guard_metadata(session, final_result, request)
@@ -1982,6 +2083,7 @@ ITERATION CONTEXT:
                         "approved": False,
                         "failure_reason": str(e),
                         "qa_summary": {},
+                        "evidence_grounding": None,
                         "generated_at": datetime.now().isoformat()
                     }
                     _attach_json_guard_metadata(session, final_result, request)
@@ -2237,6 +2339,7 @@ ITERATION CONTEXT:
                     "final_iteration": iteration + 1,
                     "final_score": consensus_result.average_score,
                     "qa_summary": consensus_result.dict(),
+                    "evidence_grounding": qa_comprehensive_result.get("evidence_grounding") if qa_comprehensive_result else None,
                     "generated_at": datetime.now().isoformat()
                 }
                 _attach_json_guard_metadata(session, final_result, request)
@@ -2424,6 +2527,7 @@ ITERATION CONTEXT:
                         "approved": False,
                         "failure_reason": approval_result["reason"],
                         "qa_summary": consensus_result.dict() if "consensus_result" in locals() else {},
+                        "evidence_grounding": qa_comprehensive_result.get("evidence_grounding") if qa_comprehensive_result else None,
                         "generated_at": datetime.now().isoformat()
                     }
                     _attach_json_guard_metadata(session, final_result, request)
@@ -2624,12 +2728,65 @@ ITERATION CONTEXT:
                         await add_verbose_log(session_id, message)
 
                     # Create QA stream callback for Gran Sabio content evaluation
-                    async def qa_stream_callback_gran_sabio(chunk: str, model: str, layer: str):
-                        """Capture Gran Sabio QA AI responses chunk-by-chunk for real-time streaming"""
+                    async def qa_stream_callback_gran_sabio(data, model: str = None, layer: str = None):
+                        """
+                        Unified callback for Gran Sabio QA streaming that handles both:
+                        - Text chunks from semantic QA evaluations (data=chunk_str)
+                        - Structured events from evidence grounding (data=dict with type='grounding_phase')
+                        """
+                        project_id = session.get("project_id")
+
+                        # Handle grounding events (dict format from grounding_engine.py)
+                        if isinstance(data, dict) and data.get("type") == "grounding_phase":
+                            grounding_phase = data.get("phase", "unknown")
+                            grounding_status = data.get("status", "update")
+
+                            # Build descriptive message for verbose log
+                            if grounding_phase == "claim_extraction":
+                                if grounding_status == "completed":
+                                    total = data.get("total_extracted", 0)
+                                    after_filter = data.get("after_filter", 0)
+                                    log_msg = f"[Evidence Grounding] Extracted {total} claims, {after_filter} after filtering"
+                                else:
+                                    log_msg = f"[Evidence Grounding] Claim extraction: {grounding_status}"
+                            elif grounding_phase == "budget_scoring":
+                                if grounding_status == "completed":
+                                    flagged = data.get("flagged_claims", 0)
+                                    passed = data.get("passed", True)
+                                    status_str = "PASSED" if passed else "FAILED"
+                                    log_msg = f"[Evidence Grounding] {status_str}: {flagged} claims flagged"
+                                else:
+                                    log_msg = f"[Evidence Grounding] Budget scoring: {grounding_status}"
+                            else:
+                                log_msg = f"[Evidence Grounding] {grounding_phase}: {grounding_status}"
+
+                            await add_verbose_log(session_id, log_msg)
+
+                            # Publish structured event to project stream
+                            if project_id:
+                                import json_utils as json
+                                event_type = f"grounding_{grounding_phase}_{grounding_status}"
+                                grounding_content = json.dumps({
+                                    "grounding_phase": grounding_phase,
+                                    "grounding_status": grounding_status,
+                                    "flagged_claims": data.get("flagged_claims"),
+                                    "passed": data.get("passed"),
+                                })
+                                await publish_project_phase_chunk(
+                                    project_id,
+                                    "qa",
+                                    grounding_content,
+                                    session_id=session_id,
+                                    request_name=session.get("request_name"),
+                                    event=event_type,
+                                )
+                            return
+
+                        # Handle QA text chunks (existing behavior)
+                        chunk = data
                         # Append to current partial_content for streaming
                         current_partial = session.get("partial_content", "")
                         session["partial_content"] = current_partial + chunk
-                        project_id = session.get("project_id")
                         if project_id and chunk:
                             await publish_project_phase_chunk(
                                 project_id,
@@ -2662,6 +2819,14 @@ ITERATION CONTEXT:
                     marker_length_gs = marker_config_gs.get('phrase_length')
                     word_map_formatted_gs = marker_config_gs.get('word_map_formatted')
 
+                    # Determine if we should pass images to QA (vision-enabled QA) - for Gran Sabio fallback
+                    qa_input_images = None
+                    if getattr(request, 'qa_with_vision', False) and images_for_generation:
+                        qa_input_images = images_for_generation
+                        logger.info(
+                            f"Session {session_id}: Gran Sabio QA vision enabled with {len(qa_input_images)} images"
+                        )
+
                     # Implement retry logic for QA timeouts (without consuming iterations)
                     qa_retry_count_gs = 0
                     qa_evaluation_success_gs = False
@@ -2683,6 +2848,8 @@ ITERATION CONTEXT:
                                     marker_length=marker_length_gs,
                                     word_map_formatted=word_map_formatted_gs,
                                     input_images=qa_input_images,
+                                    evidence_grounding_config=getattr(request, 'evidence_grounding', None),
+                                    context_for_grounding=_build_grounding_context(request, context_prompt),
                                 ),
                                 timeout=comprehensive_timeout_gs
                             )
@@ -2771,6 +2938,7 @@ ITERATION CONTEXT:
                                     "final_iteration": "Gran Sabio",
                                     "final_score": consensus_result.average_score,
                                     "qa_summary": consensus_result.dict(),
+                                    "evidence_grounding": qa_comprehensive_result.get("evidence_grounding") if qa_comprehensive_result else None,
                                     "generated_at": datetime.now().isoformat()
                                 }
                                 if fallback_notes:
@@ -2996,6 +3164,7 @@ ITERATION CONTEXT:
                 "final_score": 0.0,
                 "approved": False,
                 "failure_reason": gran_sabio_result.error,
+                "evidence_grounding": None,
                 "generated_at": datetime.now().isoformat()
             }
             _attach_json_guard_metadata(session, final_payload, request)
@@ -3060,6 +3229,7 @@ ITERATION CONTEXT:
                         "approved": False,
                         "failure_reason": failure_reason,
                         "gran_sabio_reason": gran_sabio_result.reason,
+                        "evidence_grounding": None,
                         "generated_at": datetime.now().isoformat()
                     }
                     if fallback_notes:
@@ -3101,6 +3271,7 @@ ITERATION CONTEXT:
                 "final_iteration": "Gran Sabio",
                 "final_score": gran_sabio_result.final_score,
                 "gran_sabio_reason": gran_sabio_result.reason,
+                "evidence_grounding": None,  # Not available in Gran Sabio review flow
                 "generated_at": datetime.now().isoformat()
             }
             if fallback_notes:
@@ -3151,6 +3322,7 @@ ITERATION CONTEXT:
                 "approved": False,
                 "failure_reason": gran_sabio_result.reason,
                 "gran_sabio_reason": gran_sabio_result.reason,
+                "evidence_grounding": None,  # Not available in Gran Sabio review flow
                 "generated_at": datetime.now().isoformat()
             }
             if fallback_notes:
@@ -3198,6 +3370,7 @@ ITERATION CONTEXT:
             "final_score": 0.0,
             "approved": False,
             "failure_reason": str(e),
+            "evidence_grounding": None,
             "generated_at": datetime.now().isoformat()
         }
         _attach_json_guard_metadata(session, final_result, request)

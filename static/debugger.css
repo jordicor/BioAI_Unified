@@ -184,3 +184,173 @@ textarea {
 .hidden {
     display: none;
 }
+
+/* Evidence Grounding Panel Styles */
+#grounding-section {
+    grid-column: 1 / -1;
+    border: 1px solid #1f2933;
+    border-radius: 6px;
+    background-color: #0b1120;
+    padding: 16px;
+}
+
+#grounding-section h3 {
+    margin: 0 0 12px;
+    color: #93c5fd;
+}
+
+#grounding-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.grounding-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.grounding-status.grounding-passed {
+    background-color: #14532d;
+    border: 1px solid #22c55e;
+    color: #86efac;
+}
+
+.grounding-status.grounding-failed {
+    background-color: #7f1d1d;
+    border: 1px solid #ef4444;
+    color: #fca5a5;
+}
+
+.grounding-status .status-icon {
+    font-size: 18px;
+}
+
+.grounding-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    flex: 1;
+}
+
+.grounding-metrics .metric {
+    display: flex;
+    flex-direction: column;
+    background-color: #1f2933;
+    padding: 8px 12px;
+    border-radius: 4px;
+    min-width: 100px;
+}
+
+.grounding-metrics .metric-label {
+    font-size: 11px;
+    color: #9ca3af;
+    text-transform: uppercase;
+}
+
+.grounding-metrics .metric-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.grounding-metrics .metric-value.flagged {
+    color: #f87171;
+}
+
+.grounding-metrics .metric-value.action-deal_breaker {
+    color: #ef4444;
+}
+
+.grounding-metrics .metric-value.action-regenerate {
+    color: #f59e0b;
+}
+
+.grounding-metrics .metric-value.action-warn {
+    color: #fbbf24;
+}
+
+/* Claims Table */
+.grounding-claims-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.grounding-claims-table th,
+.grounding-claims-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #1f2933;
+}
+
+.grounding-claims-table th {
+    background-color: #1f2933;
+    color: #93c5fd;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.grounding-claims-table tbody tr:hover {
+    background-color: #1f2937;
+}
+
+.grounding-claims-table .claim-ok {
+    background-color: rgba(34, 197, 94, 0.05);
+}
+
+.grounding-claims-table .claim-flagged {
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+.grounding-claims-table .claim-text {
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.grounding-claims-table .gap-high {
+    color: #f87171;
+    font-weight: 600;
+}
+
+.grounding-claims-table .gap-ok {
+    color: #86efac;
+}
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-ok {
+    background-color: #14532d;
+    color: #86efac;
+    border: 1px solid #22c55e;
+}
+
+.badge-flagged {
+    background-color: #7f1d1d;
+    color: #fca5a5;
+    border: 1px solid #ef4444;
+}
+
+.no-claims {
+    color: #9ca3af;
+    font-style: italic;
+    padding: 12px;
+}

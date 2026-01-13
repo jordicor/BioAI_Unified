@@ -377,6 +377,91 @@ def _analyze_word_count_conflicts(request: ContentRequest) -> Dict[str, Any]:
     }
 
 
+def _validate_evidence_grounding_config(request: ContentRequest) -> Optional[PreflightIssue]:
+    """
+    Validate evidence grounding configuration before generation.
+
+    Checks that the configured model supports logprobs, which is required
+    for the budget scoring phase of evidence grounding verification.
+
+    Args:
+        request: Content request to validate
+
+    Returns:
+        PreflightIssue if validation fails, None if valid or not enabled
+    """
+    # Check if evidence grounding is enabled
+    if not request.evidence_grounding or not request.evidence_grounding.enabled:
+        return None
+
+    # Get the scoring model (requires logprobs validation)
+    # If user specifies a model, it's used for both extraction and scoring
+    eg_scoring_model = request.evidence_grounding.model or config.EVIDENCE_GROUNDING_SCORING_MODEL
+
+    if not eg_scoring_model:
+        return PreflightIssue(
+            code="evidence_grounding_no_model",
+            severity="critical",
+            message="Evidence grounding is enabled but no scoring model is configured. "
+                    "Set EVIDENCE_GROUNDING_SCORING_MODEL in config or specify model in request.",
+            blockers=True,
+            related_requirements=["evidence_grounding"],
+        )
+
+    # Check model info
+    model_info = config.get_model_info(eg_scoring_model)
+    if not model_info:
+        return PreflightIssue(
+            code="evidence_grounding_unknown_model",
+            severity="critical",
+            message=f"Evidence grounding model '{eg_scoring_model}' is not recognized. "
+                    f"Please use a valid OpenAI model that supports logprobs.",
+            blockers=True,
+            related_requirements=["evidence_grounding"],
+        )
+
+    provider = model_info.get("provider", "")
+
+    # Only OpenAI models support logprobs
+    if provider != "openai":
+        return PreflightIssue(
+            code="evidence_grounding_no_logprobs",
+            severity="critical",
+            message=f"Evidence grounding model '{eg_scoring_model}' (provider: {provider}) does not support logprobs. "
+                    f"Only OpenAI models support the logprob verification required for evidence grounding. "
+                    f"Please use gpt-4o-mini, gpt-5-nano, or similar OpenAI models.",
+            blockers=True,
+            related_requirements=["evidence_grounding"],
+        )
+
+    # Check for reasoning models that don't support logprobs (o1, o3)
+    model_id = model_info.get("model_id", eg_scoring_model).lower()
+    reasoning_markers = ["o1-", "o1_", "o3-", "o3_", "/o1", "/o3"]
+    is_reasoning_model = any(marker in model_id for marker in reasoning_markers)
+
+    # Also check for standalone "o1" or "o3" but not "gpt-4o" patterns
+    if not is_reasoning_model:
+        # Check for models like "o1", "o1-mini", "o3", "o3-mini" but not "gpt-4o"
+        parts = model_id.replace("-", "_").split("_")
+        if parts and parts[0] in ("o1", "o3"):
+            is_reasoning_model = True
+
+    if is_reasoning_model:
+        return PreflightIssue(
+            code="evidence_grounding_reasoning_model",
+            severity="critical",
+            message=f"Evidence grounding model '{eg_scoring_model}' is a reasoning model that does not expose logprobs. "
+                    f"Reasoning models (o1, o1-mini, o3, o3-mini) cannot be used for evidence grounding verification. "
+                    f"Please use gpt-4o-mini, gpt-5-nano, or similar models instead.",
+            blockers=True,
+            related_requirements=["evidence_grounding"],
+        )
+
+    # Valid configuration
+    logger.debug(f"Evidence grounding model '{eg_scoring_model}' validated successfully")
+    return None
+
+
 async def run_preflight_validation(
     ai_service,
     request: ContentRequest,
@@ -400,6 +485,20 @@ async def run_preflight_validation(
     Returns:
         PreflightResult with decision (proceed/reject) and validation feedback.
     """
+    # Early validation: Check evidence grounding model compatibility (no API call needed)
+    evidence_grounding_issue = _validate_evidence_grounding_config(request)
+    if evidence_grounding_issue:
+        logger.warning(f"Evidence grounding validation failed: {evidence_grounding_issue.message}")
+        return PreflightResult(
+            decision="reject",
+            user_feedback=evidence_grounding_issue.message,
+            summary="Evidence grounding configuration invalid",
+            issues=[evidence_grounding_issue],
+            word_count_analysis=None,
+            enable_algorithmic_word_count=False,
+            duplicate_word_count_layers_to_remove=[],
+        )
+
     if not getattr(config, "PREFLIGHT_VALIDATION_MODEL", None):
         heuristic_analysis = _analyze_word_count_conflicts(request)
         return PreflightResult(

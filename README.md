@@ -290,6 +290,43 @@ Block specific phrases or patterns:
 
 ---
 
+### Evidence Grounding (Confabulation Detection)
+
+Detect when AI models claim to use evidence but actually ignore it:
+
+```json
+{
+  "evidence_grounding": {
+    "enabled": true,
+    "model": "gpt-4o-mini",
+    "budget_gap_threshold": 0.5,
+    "on_flag": "deal_breaker",
+    "max_flagged_claims": 2
+  }
+}
+```
+
+**How it works:**
+1. Extracts verifiable claims from generated content
+2. Measures P(claim | evidence) vs P(claim | no evidence) using logprobs
+3. Flags claims where confidence doesn't drop when evidence is removed
+
+**This catches:**
+- "According to the sources, Marie Curie was born in Paris" (context says Warsaw)
+- Claims that sound referenced but ignore the actual context
+
+**Configuration modes:**
+
+| Mode | `on_flag` | When to use |
+|------|-----------|-------------|
+| Verification-only | `"warn"` | General content, informational logging |
+| Fail-fast | `"deal_breaker"` | Critical factual content, medical/legal |
+| Regenerate | `"regenerate"` | Auto-fix on detection |
+
+**Cost:** ~$0.003 per request for 10 claims (2-6% overhead)
+
+---
+
 ### Vision/Image Support
 
 Process images alongside text for multimodal content generation:

@@ -30,10 +30,11 @@ if TYPE_CHECKING:
 from ai_service import AIService, get_ai_service, AIRequestError
 from qa_evaluation_service import QAEvaluationService
 from usage_tracking import UsageTracker
-from models import QALayer, QAEvaluation
+from models import QALayer, QAEvaluation, EvidenceGroundingConfig, EvidenceGroundingResult
 from config import config
 from qa_bypass_engine import QABypassEngine
 from gran_sabio import GranSabioInvocationError, GranSabioProcessCancelled
+from evidence_grounding import GroundingEngine, get_effective_order
 
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,7 @@ class QAEngine:
         self.ai_service = ai_service if ai_service is not None else get_ai_service()
         self.qa_evaluator = QAEvaluationService(self.ai_service)
         self.bypass_engine = bypass_engine if bypass_engine is not None else QABypassEngine()
+        self.grounding_engine = GroundingEngine(self.ai_service)
         self._qa_failure_tracker: Dict[str, Dict[str, int]] = defaultdict(dict)
 
     def _should_request_edit_info(
@@ -415,7 +417,122 @@ class QAEngine:
                 logger.info(f"Deal-breaker layer {layer.name} failed, continuing for comprehensive feedback")
         
         return results
-    
+
+    async def _evaluate_evidence_grounding(
+        self,
+        content: str,
+        context: str,
+        grounding_config: EvidenceGroundingConfig,
+        progress_callback: Optional[Callable] = None,
+        stream_callback: Optional[Callable] = None,
+        usage_tracker: Optional[UsageTracker] = None,
+        extra_verbose: bool = False,
+        phase_logger: Optional["PhaseLogger"] = None,
+    ) -> tuple:
+        """
+        Run evidence grounding check and convert result to QAEvaluation.
+
+        This method is called as part of the QA layer execution flow when
+        evidence grounding is enabled. It treats grounding as a special
+        QA layer that uses logprobs instead of semantic evaluation.
+
+        Args:
+            content: Generated content to verify
+            context: Original context/evidence (prompt + attachments)
+            grounding_config: Evidence grounding configuration
+            progress_callback: Progress update callback
+            stream_callback: Streaming events callback
+            usage_tracker: Token usage tracker
+            extra_verbose: Enable detailed logging
+            phase_logger: Phase logger for structured logging
+
+        Returns:
+            Tuple of (QAEvaluation, EvidenceGroundingResult)
+            - QAEvaluation: For consensus integration with other QA layers
+            - EvidenceGroundingResult: Full detailed result for reporting
+        """
+        if phase_logger:
+            phase_logger.info("Running evidence grounding verification...")
+
+        # Create usage callback if tracker provided
+        usage_callback = None
+        if usage_tracker:
+            usage_callback = usage_tracker.create_callback(
+                phase="evidence_grounding",
+                role="grounding_verifier",
+                operation="logprob_verification",
+            )
+
+        # Run the grounding check
+        grounding_result = await self.grounding_engine.run_grounding_check(
+            content=content,
+            context=context,
+            grounding_config=grounding_config,
+            progress_callback=progress_callback,
+            stream_callback=stream_callback,
+            usage_callback=usage_callback,
+            extra_verbose=extra_verbose,
+        )
+
+        # Convert to QAEvaluation for consensus integration
+        # Score mapping:
+        #   - passed=True -> 10.0
+        #   - passed=False with warn -> 5.0 (contributes to average but not deal_breaker)
+        #   - passed=False with deal_breaker/regenerate -> 0.0
+        if grounding_result.passed:
+            score = 10.0
+            feedback = (
+                f"Evidence grounding PASSED. Verified {grounding_result.claims_verified} claims, "
+                f"{grounding_result.flagged_claims} flagged (threshold: {grounding_config.max_flagged_claims})."
+            )
+        elif grounding_result.triggered_action == "warn":
+            score = 5.0
+            feedback = (
+                f"Evidence grounding WARNING. {grounding_result.flagged_claims} claims lack sufficient "
+                f"evidence grounding (max gap: {grounding_result.max_budget_gap:.2f} bits)."
+            )
+        else:
+            score = 0.0
+            feedback = (
+                f"Evidence grounding FAILED. {grounding_result.flagged_claims} claims flagged "
+                f"(>= threshold {grounding_config.max_flagged_claims}). "
+                f"Max budget gap: {grounding_result.max_budget_gap:.2f} bits."
+            )
+
+        is_deal_breaker = (
+            not grounding_result.passed and
+            grounding_result.triggered_action in ("deal_breaker", "regenerate")
+        )
+
+        qa_evaluation = QAEvaluation(
+            model="evidence_grounding_logprobs",
+            layer="Evidence Grounding",
+            score=score,
+            feedback=feedback,
+            deal_breaker=is_deal_breaker,
+            deal_breaker_reason=(
+                f"{grounding_result.flagged_claims} claims lack evidence grounding"
+                if is_deal_breaker else None
+            ),
+            passes_score=grounding_result.passed,
+            metadata={
+                "grounding_result": grounding_result.model_dump(),
+                "verification_time_ms": grounding_result.verification_time_ms,
+                "flagged_claims_detail": [
+                    {"idx": c.idx, "claim": c.claim, "budget_gap": c.budget_gap}
+                    for c in grounding_result.claims if c.flagged
+                ],
+            }
+        )
+
+        if phase_logger:
+            phase_logger.info(
+                f"Evidence grounding: score={score}, passed={grounding_result.passed}, "
+                f"flagged={grounding_result.flagged_claims}, deal_breaker={is_deal_breaker}"
+            )
+
+        return qa_evaluation, grounding_result
+
     async def evaluate_all_layers_with_progress(
         self,
         content: str,
@@ -435,6 +552,8 @@ class QAEngine:
         marker_length: Optional[int] = None,
         word_map_formatted: Optional[str] = None,
         input_images: Optional[List["ImageData"]] = None,
+        evidence_grounding_config: Optional[EvidenceGroundingConfig] = None,
+        context_for_grounding: Optional[str] = None,
     ) -> Dict[str, Dict[str, QAEvaluation]]:
         """
         Evaluate content through all QA layers with detailed progress tracking.
@@ -445,6 +564,9 @@ class QAEngine:
             word_map_formatted: Formatted word map string for word_index mode
             input_images: Optional list of ImageData for vision-enabled QA.
                          Passed to layers with include_input_images=True.
+            evidence_grounding_config: Optional evidence grounding configuration.
+                         If enabled, grounding runs as a special layer with auto-order.
+            context_for_grounding: Context string for grounding (prompt + attachments).
         """
         from models import QAModelConfig
 
@@ -452,19 +574,109 @@ class QAEngine:
             return model.model if isinstance(model, QAModelConfig) else model
 
         qa_model_names = [get_model_name(m) for m in qa_models]
-        sorted_layers = sorted(layers, key=lambda x: x.order)
+
+        # Build unified execution plan including semantic layers and evidence grounding
+        execution_plan: List[Dict[str, Any]] = []
+
+        # Add semantic QA layers
+        for layer in layers:
+            execution_plan.append({
+                "type": "semantic_layer",
+                "layer": layer,
+                "order": layer.order,
+            })
+
+        # Add evidence grounding if enabled
+        grounding_result_holder: Dict[str, Any] = {"result": None}
+        if evidence_grounding_config and evidence_grounding_config.enabled:
+            grounding_order = get_effective_order(evidence_grounding_config)
+            execution_plan.append({
+                "type": "evidence_grounding",
+                "config": evidence_grounding_config,
+                "order": grounding_order,
+            })
+            logger.info(f"Evidence grounding enabled with order={grounding_order}")
+
+        # Sort execution plan by order
+        execution_plan.sort(key=lambda x: x["order"])
 
         escalations_this_evaluation = 0
         iteration_limit = getattr(original_request, 'gran_sabio_call_limit_per_iteration', -1)
         results: Dict[str, Dict[str, QAEvaluation]] = {}
+        extra_verbose = getattr(original_request, 'extra_verbose', False) if original_request else False
 
         async def _abort_if_cancelled(message: str) -> None:
             if cancel_callback and await cancel_callback():
                 if progress_callback:
                     await progress_callback(message)
                 raise QAProcessCancelled()
-        
-        for layer in sorted_layers:
+
+        for plan_item in execution_plan:
+            # Handle evidence grounding as special layer
+            if plan_item["type"] == "evidence_grounding":
+                await _abort_if_cancelled("Cancelled before evidence grounding.")
+
+                if phase_logger:
+                    phase_logger.info("Executing evidence grounding layer...")
+
+                if progress_callback:
+                    await progress_callback("Evidence grounding verification...")
+
+                grounding_config = plan_item["config"]
+                context = context_for_grounding or getattr(original_request, 'prompt', '')
+
+                qa_eval, full_result = await self._evaluate_evidence_grounding(
+                    content=content,
+                    context=context,
+                    grounding_config=grounding_config,
+                    progress_callback=progress_callback,
+                    stream_callback=stream_callback,
+                    usage_tracker=usage_tracker,
+                    extra_verbose=extra_verbose,
+                    phase_logger=phase_logger,
+                )
+
+                grounding_result_holder["result"] = full_result
+
+                # Store as layer result (single "model")
+                results["Evidence Grounding"] = {
+                    "evidence_grounding_logprobs": qa_eval
+                }
+
+                # Handle deal-breaker
+                if qa_eval.deal_breaker:
+                    deal_breaker_consensus = {
+                        "immediate_stop": True,
+                        "deal_breaker_count": 1,
+                        "total_evaluated": 1,
+                        "total_models": 1,
+                        "deal_breaker_details": [{
+                            "model": "evidence_grounding",
+                            "reason": qa_eval.deal_breaker_reason
+                        }],
+                        "majority_threshold": 0.5
+                    }
+
+                    if grounding_config.on_flag == "deal_breaker":
+                        logger.warning("Evidence grounding deal-breaker triggered. Stopping evaluation.")
+                        if progress_callback:
+                            await progress_callback("Evidence grounding FAILED. Forcing iteration.")
+                        return self._create_iteration_stop_result(results, deal_breaker_consensus)
+
+                    elif grounding_config.on_flag == "regenerate":
+                        logger.warning("Evidence grounding failed with regenerate action. Stopping evaluation.")
+                        if progress_callback:
+                            await progress_callback("Evidence grounding FAILED. Triggering regeneration.")
+                        return self._create_iteration_stop_result(results, deal_breaker_consensus)
+
+                if progress_callback:
+                    status = "PASSED" if full_result.passed else "WARNING"
+                    await progress_callback(f"Evidence grounding: {status} ({full_result.flagged_claims} claims flagged)")
+
+                continue  # Move to next item in execution plan
+
+            # Handle semantic QA layer (existing logic)
+            layer = plan_item["layer"]
             await _abort_if_cancelled(f"🛑 Cancelled before evaluating layer {layer.name}.")
 
             # Log layer evaluation start with phase_logger
@@ -973,6 +1185,8 @@ class QAEngine:
         marker_length: Optional[int] = None,
         word_map_formatted: Optional[str] = None,
         input_images: Optional[List["ImageData"]] = None,
+        evidence_grounding_config: Optional[EvidenceGroundingConfig] = None,
+        context_for_grounding: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Comprehensive content evaluation with progress tracking
@@ -983,6 +1197,9 @@ class QAEngine:
             word_map_formatted: Formatted word map string for word_index mode
             input_images: Optional list of ImageData for vision-enabled QA.
                          Passed to layers with include_input_images=True.
+            evidence_grounding_config: Optional evidence grounding configuration.
+                         If enabled, grounding runs as a special layer with auto-order.
+            context_for_grounding: Context string for grounding (prompt + attachments).
         """
         from models import QAModelConfig
 
@@ -1009,6 +1226,8 @@ class QAEngine:
             marker_length=marker_length,
             word_map_formatted=word_map_formatted,
             input_images=input_images,
+            evidence_grounding_config=evidence_grounding_config,
+            context_for_grounding=context_for_grounding,
         )
 
         if isinstance(qa_results, dict) and qa_results.get("summary", {}).get("force_iteration"):
@@ -1018,19 +1237,27 @@ class QAEngine:
         critical_issues = self._identify_critical_issues(qa_results)
         layer_stats = self._calculate_layer_statistics(qa_results, layers)
         model_stats = self._calculate_model_statistics(qa_results, qa_model_names)
-        
+
+        # Extract full grounding result from metadata if present
+        evidence_grounding_result = None
+        if "Evidence Grounding" in qa_results:
+            eg_eval = qa_results["Evidence Grounding"].get("evidence_grounding_logprobs")
+            if eg_eval and eg_eval.metadata:
+                evidence_grounding_result = eg_eval.metadata.get("grounding_result")
+
         end_time = datetime.now()
         evaluation_time = (end_time - start_time).total_seconds()
-        
+
         if progress_callback:
-            await progress_callback(f"✅ Evaluation completed in {evaluation_time:.2f} seconds")
-        
+            await progress_callback(f"Evaluation completed in {evaluation_time:.2f} seconds")
+
         return {
             "qa_results": qa_results,
             "summary": summary,
             "critical_issues": critical_issues,
             "layer_statistics": layer_stats,
             "model_statistics": model_stats,
+            "evidence_grounding": evidence_grounding_result,
             "evaluation_metadata": {
                 "start_time": start_time.isoformat(),
                 "end_time": end_time.isoformat(),

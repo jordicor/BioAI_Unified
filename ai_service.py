@@ -10,6 +10,7 @@ import asyncio
 import aiohttp
 import time
 import logging
+import random
 import threading
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple, Callable, TYPE_CHECKING, TypeVar, Awaitable
@@ -684,11 +685,41 @@ class AIService:
         except Exception:
             return 3
 
-    def _retry_delay_seconds(self) -> float:
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """
+        Calculate retry delay with exponential backoff and optional jitter.
+
+        Formula: delay = min(base * multiplier^(attempt-1), max_delay) + jitter
+
+        Args:
+            attempt: Current attempt number (1-based)
+
+        Returns:
+            Delay in seconds before next retry
+        """
         try:
-            delay = float(getattr(config, "RETRY_DELAY", 10.0))
+            base_delay = float(getattr(config, "RETRY_DELAY", 10.0))
+            multiplier = float(getattr(config, "RETRY_BACKOFF_MULTIPLIER", 2.0))
+            max_delay = float(getattr(config, "RETRY_MAX_DELAY", 120.0))
+            use_jitter = bool(getattr(config, "RETRY_JITTER", True))
+
+            # Calculate exponential backoff: base * multiplier^(attempt-1)
+            # attempt 1 -> base * 1 = base
+            # attempt 2 -> base * multiplier
+            # attempt 3 -> base * multiplier^2
+            delay = base_delay * (multiplier ** (attempt - 1))
+
+            # Cap at maximum delay
+            delay = min(delay, max_delay)
+
+            # Add jitter (0-25% of delay) to prevent thundering herd
+            if use_jitter and delay > 0:
+                jitter = random.uniform(0, delay * 0.25)
+                delay += jitter
+
             return max(0.0, delay)
         except Exception:
+            # Fallback to simple delay on config errors
             return 10.0
 
     @staticmethod
@@ -751,7 +782,6 @@ class AIService:
         action: str,
     ) -> T:
         max_attempts = self._max_retry_attempts()
-        delay_seconds = self._retry_delay_seconds()
         last_exception: Optional[Exception] = None
 
         for attempt in range(1, max_attempts + 1):
@@ -766,10 +796,11 @@ class AIService:
                 if not should_retry:
                     raise
 
+                delay_seconds = self._calculate_retry_delay(attempt)
                 request_id = self._extract_request_id(exc)
                 suffix = f" (request_id={request_id})" if request_id else ""
                 logger.warning(
-                    "AI %s failed for %s via %s on attempt %d/%d%s: %s",
+                    "AI %s failed for %s via %s on attempt %d/%d%s: %s (retrying in %.1fs)",
                     action,
                     model_id,
                     provider,
@@ -777,6 +808,7 @@ class AIService:
                     max_attempts,
                     suffix,
                     exc,
+                    delay_seconds,
                 )
 
                 await asyncio.sleep(delay_seconds)
@@ -1582,7 +1614,159 @@ class AIService:
                 **request_kwargs,
             )
             return response.choices[0].message.content, getattr(response, "usage", None)
-    
+
+    async def generate_with_logprobs(
+        self,
+        prompt: str,
+        model: str,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 5,
+        top_logprobs: int = 10,
+        temperature: float = 0.0,
+        usage_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        usage_extra: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
+        """
+        Generate content and return logprobs for the response tokens.
+
+        This method is specifically designed for evidence grounding verification,
+        where we need to extract token probabilities for YES/NO/UNSURE responses.
+
+        IMPORTANT: Only OpenAI models that support logprobs can be used:
+        - Supported: gpt-4o, gpt-4o-mini, gpt-5-nano, gpt-5-mini, gpt-5, gpt-4.1
+        - NOT supported: o1, o1-mini, o3, o3-mini (reasoning models)
+        - NOT supported: Claude models, Gemini models
+
+        Args:
+            prompt: The user prompt
+            model: Model name (must support logprobs)
+            system_prompt: Optional system prompt
+            max_tokens: Maximum tokens to generate (usually small, e.g., 5)
+            top_logprobs: Number of top logprobs per token (1-20)
+            temperature: Generation temperature (0.0 for deterministic)
+            usage_callback: Token usage tracking callback
+            usage_extra: Additional metadata for usage tracking
+
+        Returns:
+            Tuple of (generated_text, logprobs_content) where logprobs_content
+            is a list of dicts with 'token', 'logprob', and 'top_logprobs' fields
+
+        Raises:
+            ValueError: If model doesn't support logprobs
+            Exception: If API call fails
+        """
+        # Validate model supports logprobs
+        model_info = config.get_model_info(model)
+        if not model_info:
+            raise ValueError(f"Unknown model: {model}")
+
+        provider = model_info.get("provider", "")
+        model_id = model_info.get("model_id", model)
+
+        # Only OpenAI and xAI models (excluding reasoning models) support logprobs
+        if provider not in ("openai", "xai"):
+            raise ValueError(
+                f"Model {model} (provider: {provider}) does not support logprobs. "
+                f"Only OpenAI and xAI models support logprobs for evidence grounding."
+            )
+
+        # Check for reasoning models that don't support logprobs
+        reasoning_markers = ["o1", "o3"]
+        model_lower = model_id.lower()
+        is_reasoning_model = any(
+            marker in model_lower and f"gpt-{marker}" not in model_lower
+            for marker in reasoning_markers
+        )
+        # xAI reasoning models (grok-*-reasoning) don't support logprobs
+        # But non-reasoning models (grok-*-non-reasoning) DO support logprobs
+        if provider == "xai" and "reasoning" in model_lower and "non-reasoning" not in model_lower:
+            is_reasoning_model = True
+
+        if is_reasoning_model:
+            raise ValueError(
+                f"Model {model_id} is a reasoning model that does not support logprobs. "
+                f"Use gpt-4o-mini or grok-*-non-reasoning models for evidence grounding."
+            )
+
+        # Clamp top_logprobs to API limits
+        # OpenAI: 1-20, xAI: 1-8
+        max_logprobs = 8 if provider == "xai" else 20
+        top_logprobs = max(1, min(max_logprobs, top_logprobs))
+
+        # Build messages
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        # Build API parameters
+        create_params = {
+            "model": model_id,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "logprobs": True,
+            "top_logprobs": top_logprobs,
+        }
+
+        logger.debug(
+            f"Generating with logprobs: model={model_id}, provider={provider}, "
+            f"top_logprobs={top_logprobs}, max_tokens={max_tokens}"
+        )
+
+        # Select appropriate client based on provider
+        if provider == "xai":
+            if not self.xai_client:
+                raise ValueError("xAI client not initialized. Check XAI_API_KEY.")
+            client = self.xai_client
+        else:
+            client = self.openai_client
+
+        try:
+            response = await client.chat.completions.create(**create_params)
+        except Exception as e:
+            logger.error(f"Logprobs API call failed for {model_id} ({provider}): {e}")
+            raise
+
+        # Extract content
+        content = response.choices[0].message.content or ""
+
+        # Extract logprobs
+        logprobs_data = None
+        if response.choices[0].logprobs and response.choices[0].logprobs.content:
+            logprobs_data = []
+            for token_data in response.choices[0].logprobs.content:
+                token_info = {
+                    "token": token_data.token,
+                    "logprob": token_data.logprob,
+                    "top_logprobs": [],
+                }
+                if token_data.top_logprobs:
+                    for top in token_data.top_logprobs:
+                        token_info["top_logprobs"].append({
+                            "token": top.token,
+                            "logprob": top.logprob,
+                        })
+                logprobs_data.append(token_info)
+
+        # Track usage
+        if usage_callback and hasattr(response, "usage") and response.usage:
+            usage_info = {
+                "model": model_id,
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+                "timestamp": datetime.now().isoformat(),
+            }
+            if usage_extra:
+                usage_info.update(usage_extra)
+            try:
+                usage_callback(usage_info)
+            except Exception as cb_error:
+                logger.warning(f"Usage callback error: {cb_error}")
+
+        return content, logprobs_data
+
     async def generate_content_stream(
         self,
         prompt: str,
@@ -1843,7 +2027,6 @@ class AIService:
                 raise ValueError(f"Unsupported provider: {provider}")
 
         max_attempts = self._max_retry_attempts()
-        delay_seconds = self._retry_delay_seconds()
         last_exception: Optional[Exception] = None
         attempt = 1
 
@@ -1867,16 +2050,18 @@ class AIService:
                 if not should_retry:
                     raise
 
+                delay_seconds = self._calculate_retry_delay(attempt)
                 request_id = self._extract_request_id(exc)
                 suffix = f" (request_id={request_id})" if request_id else ""
                 logger.warning(
-                    "Streaming failed for %s via %s on attempt %d/%d%s: %s",
+                    "Streaming failed for %s via %s on attempt %d/%d%s: %s (retrying in %.1fs)",
                     model_id,
                     provider,
                     attempt,
                     max_attempts,
                     suffix,
                     exc,
+                    delay_seconds,
                 )
                 await asyncio.sleep(delay_seconds)
                 attempt += 1

@@ -428,11 +428,34 @@ Act to the highest editorial standards and deliver a concise, well-reasoned deci
         description="System prompt used for preflight validation queries."
     )
 
+    # Evidence Grounding Configuration
+    EVIDENCE_GROUNDING_EXTRACTION_MODEL: str = Field(
+        default="gpt-5-nano",
+        description="Model for claim extraction phase (does NOT require logprobs). "
+                    "gpt-5-nano is cheapest ($0.05/$0.40 per M tokens) and fast."
+    )
+    EVIDENCE_GROUNDING_SCORING_MODEL: str = Field(
+        default="gpt-4o-mini",
+        description="Model for budget scoring phase (REQUIRES logprobs support). "
+                    "Must be OpenAI or xAI non-reasoning model. "
+                    "gpt-4o-mini recommended for best price/quality ratio."
+    )
+    # Legacy alias for backwards compatibility
+    EVIDENCE_GROUNDING_MODEL: str = Field(
+        default="gpt-4o-mini",
+        description="[DEPRECATED] Use EVIDENCE_GROUNDING_EXTRACTION_MODEL and "
+                    "EVIDENCE_GROUNDING_SCORING_MODEL instead. This field is kept "
+                    "for backwards compatibility and defaults to the scoring model."
+    )
+
     # Request limits and timeouts
     MAX_CONCURRENT_REQUESTS: int = Field(default=10, description="Maximum concurrent API requests")
     REQUEST_TIMEOUT: int = Field(default=120, description="Request timeout in seconds")
     MAX_RETRIES: int = Field(default=3, description="Maximum retries for failed requests")
-    RETRY_DELAY: float = Field(default=10.0, description="Delay between retries in seconds")
+    RETRY_DELAY: float = Field(default=10.0, description="Base delay between retries in seconds")
+    RETRY_BACKOFF_MULTIPLIER: float = Field(default=2.0, description="Multiplier for exponential backoff (delay = base * multiplier^attempt)")
+    RETRY_MAX_DELAY: float = Field(default=120.0, description="Maximum delay between retries in seconds")
+    RETRY_JITTER: bool = Field(default=True, description="Add random jitter to retry delays to avoid thundering herd")
     RETRY_STREAMING_AFTER_PARTIAL: bool = Field(
         default=True,
         description="Retry streaming even if chunks were already emitted (discards partial content)"
@@ -654,6 +677,9 @@ Act to the highest editorial standards and deliver a concise, well-reasoned deci
         self.REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "120"))
         self.MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
         self.RETRY_DELAY = float(os.getenv("RETRY_DELAY", "10.0"))
+        self.RETRY_BACKOFF_MULTIPLIER = float(os.getenv("RETRY_BACKOFF_MULTIPLIER", "2.0"))
+        self.RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "120.0"))
+        self.RETRY_JITTER = os.getenv("RETRY_JITTER", "true").lower() in {"1", "true", "yes", "on"}
         self.RETRY_STREAMING_AFTER_PARTIAL = os.getenv(
             "RETRY_STREAMING_AFTER_PARTIAL", "true"
         ).lower() in {"1", "true", "yes", "on"}
@@ -682,6 +708,18 @@ Act to the highest editorial standards and deliver a concise, well-reasoned deci
         self.VERBOSE_MAX_ENTRIES = int(os.getenv("VERBOSE_MAX_ENTRIES", "100"))
         self.PREFLIGHT_VALIDATION_MODEL = os.getenv("PREFLIGHT_VALIDATION_MODEL", self.PREFLIGHT_VALIDATION_MODEL)
         self.PREFLIGHT_SYSTEM_PROMPT = os.getenv("PREFLIGHT_SYSTEM_PROMPT", self.PREFLIGHT_SYSTEM_PROMPT)
+
+        # Evidence Grounding
+        self.EVIDENCE_GROUNDING_EXTRACTION_MODEL = os.getenv(
+            "EVIDENCE_GROUNDING_EXTRACTION_MODEL", self.EVIDENCE_GROUNDING_EXTRACTION_MODEL
+        )
+        self.EVIDENCE_GROUNDING_SCORING_MODEL = os.getenv(
+            "EVIDENCE_GROUNDING_SCORING_MODEL", self.EVIDENCE_GROUNDING_SCORING_MODEL
+        )
+        # Legacy alias - falls back to scoring model for backwards compatibility
+        self.EVIDENCE_GROUNDING_MODEL = os.getenv(
+            "EVIDENCE_GROUNDING_MODEL", self.EVIDENCE_GROUNDING_SCORING_MODEL
+        )
 
         # Gran Sabio Limits
         self.DEFAULT_GRAN_SABIO_LIMIT_PER_ITERATION = int(

@@ -81,7 +81,6 @@ backups/
 test_outputs/
 docs/
 *.test
-.coverage
 
 # Database files
 *.db
@@ -110,3 +109,6 @@ nul
 
 # Biography App (separate repository)
 #biography_app#/
+
+# Marketing outreach data (private contacts/tracking)
+marketing/

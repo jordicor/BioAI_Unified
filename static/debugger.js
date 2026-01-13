@@ -98,6 +98,120 @@ function formatJSON(payload) {
     }
 }
 
+/**
+ * Renders the Evidence Grounding panel with claim verification results.
+ * @param {Object|null} grounding - The evidence_grounding object from final result
+ */
+function renderGroundingPanel(grounding) {
+    const section = document.getElementById("grounding-section");
+    const summaryEl = document.getElementById("grounding-summary");
+    const claimsEl = document.getElementById("grounding-claims");
+
+    // Hide section if no grounding data
+    if (!grounding || !grounding.enabled) {
+        section.classList.add("hidden");
+        summaryEl.innerHTML = "";
+        claimsEl.innerHTML = "";
+        return;
+    }
+
+    section.classList.remove("hidden");
+
+    // Determine status class
+    const statusClass = grounding.passed ? "grounding-passed" : "grounding-failed";
+    const statusText = grounding.passed ? "PASSED" : "FAILED";
+    const statusIcon = grounding.passed ? "OK" : "X";
+
+    // Build summary HTML
+    const summaryHtml = `
+        <div class="grounding-status ${statusClass}">
+            <span class="status-icon">${statusIcon}</span>
+            <span class="status-text">${statusText}</span>
+        </div>
+        <div class="grounding-metrics">
+            <div class="metric">
+                <span class="metric-label">Model</span>
+                <span class="metric-value">${escapeHtml(grounding.model_used || "N/A")}</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Claims Verified</span>
+                <span class="metric-value">${grounding.claims_verified || 0} / ${grounding.total_claims_extracted || 0}</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Flagged Claims</span>
+                <span class="metric-value ${grounding.flagged_claims > 0 ? 'flagged' : ''}">${grounding.flagged_claims || 0}</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Max Budget Gap</span>
+                <span class="metric-value">${(grounding.max_budget_gap || 0).toFixed(3)} bits</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Verification Time</span>
+                <span class="metric-value">${(grounding.verification_time_ms || 0).toFixed(0)} ms</span>
+            </div>
+            ${grounding.triggered_action ? `
+            <div class="metric">
+                <span class="metric-label">Triggered Action</span>
+                <span class="metric-value action-${grounding.triggered_action}">${grounding.triggered_action}</span>
+            </div>
+            ` : ''}
+        </div>
+    `;
+    summaryEl.innerHTML = summaryHtml;
+
+    // Build claims table if there are claims
+    const claims = grounding.claims || [];
+    if (claims.length === 0) {
+        claimsEl.innerHTML = '<p class="no-claims">No claims were verified.</p>';
+        return;
+    }
+
+    let claimsHtml = `
+        <table class="grounding-claims-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Claim</th>
+                    <th>P(YES|ctx)</th>
+                    <th>P(YES|no-ctx)</th>
+                    <th>Budget Gap</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    claims.forEach((claim) => {
+        const rowClass = claim.flagged ? "claim-flagged" : "claim-ok";
+        const statusBadge = claim.flagged
+            ? '<span class="badge badge-flagged">FLAGGED</span>'
+            : '<span class="badge badge-ok">OK</span>';
+
+        // Truncate long claims for display
+        const claimText = claim.claim || "";
+        const displayClaim = claimText.length > 80
+            ? escapeHtml(claimText.substring(0, 80)) + "..."
+            : escapeHtml(claimText);
+
+        claimsHtml += `
+            <tr class="${rowClass}" title="${escapeHtml(claimText)}">
+                <td>${claim.idx}</td>
+                <td class="claim-text">${displayClaim}</td>
+                <td>${(claim.posterior_yes || 0).toFixed(3)}</td>
+                <td>${(claim.prior_yes || 0).toFixed(3)}</td>
+                <td class="${claim.budget_gap > 0.5 ? 'gap-high' : 'gap-ok'}">${(claim.budget_gap || 0).toFixed(3)}</td>
+                <td>${statusBadge}</td>
+            </tr>
+        `;
+    });
+
+    claimsHtml += `
+            </tbody>
+        </table>
+    `;
+    claimsEl.innerHTML = claimsHtml;
+}
+
 async function selectSession(sessionId) {
     state.selectedSession = sessionId;
     renderSessions();
@@ -129,6 +243,11 @@ async function loadSessionDetails(sessionId) {
         document.getElementById("preflight-data").value = formatJSON(details.preflight);
         document.getElementById("final-data").value = formatJSON(details.final);
         document.getElementById("usage-data").value = formatJSON(details.usage);
+
+        // Render Evidence Grounding panel if data is available
+        const finalResult = details.final || {};
+        const groundingData = finalResult.evidence_grounding || null;
+        renderGroundingPanel(groundingData);
     } catch (error) {
         console.error(error);
     }

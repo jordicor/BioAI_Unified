@@ -237,6 +237,11 @@
       <div class="param-type">integer</div>
       <div class="param-desc">Token usage and cost reporting: 0=disabled, 1=summary, 2=detailed.</div>
     </div>
+    <div class="param-row">
+      <div class="param-name">evidence_grounding</div>
+      <div class="param-type">object</div>
+      <div class="param-desc">Confabulation detection via logprobs. Detects when AI claims to use evidence but ignores it. See #evidence-grounding section.</div>
+    </div>
   </div>
 </section>
 
@@ -881,6 +886,83 @@
       <div class="param-desc">Maximum escalations per session (default: 15, -1 for unlimited).</div>
     </div>
   </div>
+</section>
+
+<section id="evidence-grounding" class="docs-section">
+  <h2 class="docs-subheading">Evidence Grounding (Confabulation Detection)</h2>
+  <p>Detects when AI models claim to use evidence but actually ignore it (procedural hallucination). Uses logprobs to measure P(claim | evidence) vs P(claim | no evidence).</p>
+  <p>If confidence doesn't drop when evidence is removed, the model is likely confabulating.</p>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">enabled</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Enable evidence grounding verification (default: false).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">model</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Model for logprob verification. Must support logprobs (gpt-4o-mini, gpt-5-nano recommended). Default: server config.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_claims</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Maximum claims to extract and verify (default: 15).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">filter_trivial</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">Filter non-substantive claims before verification (default: true).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">min_claim_importance</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Minimum importance score (0-1) to keep a claim (default: 0.6).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">budget_gap_threshold</div>
+      <div class="param-type">float</div>
+      <div class="param-desc">Flag claims with budget gap above this (in bits). Lower = stricter. (default: 0.5).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">on_flag</div>
+      <div class="param-type">string</div>
+      <div class="param-desc">Action when threshold exceeded: "warn" (include in results), "deal_breaker" (force iteration), "regenerate". (default: "warn").</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">max_flagged_claims</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Trigger on_flag action when this many claims are flagged (default: 2).</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">order</div>
+      <div class="param-type">integer</div>
+      <div class="param-desc">Execution order. Auto: deal_breaker/regenerate = 0 (first), warn = 999 (last).</div>
+    </div>
+  </div>
+  <h3>Budget Gap Interpretation</h3>
+  <div class="parameter-table">
+    <div class="param-row">
+      <div class="param-name">budget_gap &lt; 0</div>
+      <div class="param-type">Good</div>
+      <div class="param-desc">More evidence than needed - well grounded.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">budget_gap 0 to 0.5</div>
+      <div class="param-type">OK</div>
+      <div class="param-desc">Adequate evidence - acceptable.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">budget_gap 0.5 to 1.0</div>
+      <div class="param-type">Warning</div>
+      <div class="param-desc">Marginal evidence - review claim.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">budget_gap &gt; 1.0</div>
+      <div class="param-type">Flagged</div>
+      <div class="param-desc">Insufficient evidence - likely confabulation.</div>
+    </div>
+  </div>
+  <p>Cost: ~$0.003 per request for 10 claims (2-6% overhead on top of standard QA).</p>
 </section>
 
 <section id="word-count-enforcement" class="docs-section">

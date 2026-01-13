@@ -1083,6 +1083,12 @@ RESPONSE FORMAT:
         content_match = re.search(r'\[FINAL_CONTENT\](.*?)\[/FINAL_CONTENT\]', response, re.IGNORECASE | re.DOTALL)
         if content_match:
             final_content = content_match.group(1).strip()
+            # Clean markdown code fences if present (common when LLM wraps JSON in ```json blocks)
+            if final_content.startswith("```"):
+                from tools.ai_json_cleanroom import extract_json_payload
+                extracted, _ = extract_json_payload(final_content)
+                if extracted:
+                    final_content = extracted
         else:
             # fallback to best iteration content
             def _avg(c):

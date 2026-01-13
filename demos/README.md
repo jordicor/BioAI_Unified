@@ -29,6 +29,7 @@ This folder contains demonstration scripts showcasing the capabilities of Gran S
 | 09 | [Preflight Validation](#09-preflight-validation) | Request validation | Intermediate |
 | 10 | [Reasoning Models](#10-reasoning-models) | Deep thinking models | Advanced |
 | 11 | [Code Analyzer](#11-code-analyzer) | Dynamic JSON (no strict schema) | Advanced |
+| 12 | [Evidence Grounding](#12-evidence-grounding) | Confabulation detection | Advanced |
 
 ---
 
@@ -324,6 +325,54 @@ This demo shows when to use `json_output=True` WITHOUT `json_schema`:
 - QA validation for analysis quality
 
 **Use cases:** Code review automation, CI/CD pipelines, security scanning.
+
+---
+
+### 12: Evidence Grounding
+**File:** `12_evidence_grounding.py`
+
+Detect when AI models claim to use evidence but actually ignore it (confabulation detection).
+
+```bash
+python demos/12_evidence_grounding.py
+
+# Test specific scenario:
+python demos/12_evidence_grounding.py --scenario grounded
+python demos/12_evidence_grounding.py --scenario confabulated
+python demos/12_evidence_grounding.py --scenario no-evidence
+
+# Use deal_breaker mode (blocks generation):
+python demos/12_evidence_grounding.py --mode deal_breaker
+```
+
+**Key concept: Evidence Grounding via Logprobs**
+
+This demo shows how to detect procedural hallucination - when models claim to use evidence but ignore it:
+
+| Metric | Meaning |
+|--------|---------|
+| `budget_gap < 0` | Well-grounded (more evidence than needed) |
+| `budget_gap 0-0.5` | OK (adequate evidence) |
+| `budget_gap 0.5-1.0` | Warning (marginal evidence) |
+| `budget_gap > 1.0` | Flagged (likely confabulation) |
+
+**How it works:**
+1. Extracts verifiable claims from generated content
+2. Measures P(claim | evidence) vs P(claim | no evidence) using logprobs
+3. Flags claims where confidence doesn't drop when evidence is removed
+
+**Test scenarios:**
+- **Grounded:** Content matches context exactly (should pass)
+- **Confabulated:** Content contradicts context (should flag)
+- **No-evidence:** Claims not supported by context (should flag)
+
+**Features:**
+- Logprob-based mathematical detection
+- Configurable thresholds and modes
+- False positive handling guidance
+- Cost-efficient (~$0.003/request)
+
+**Use cases:** Factual content validation, research-based articles, citation verification.
 
 ---
 
