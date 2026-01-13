@@ -63,6 +63,16 @@
       <div class="param-desc">Optional path-based validation rules for specific JSON fields (requires json_output=true). Validates only specified fields without defining complete structure.</div>
     </div>
     <div class="param-row">
+      <div class="param-name">text_field_path</div>
+      <div class="param-type">string | array</div>
+      <div class="param-desc">Path(s) to primary text field(s) in JSON output using jmespath notation. Examples: "generated_text", "data.content", ["chapter", "notes"]. Smart Edit and QA focus on these fields while preserving other JSON structure. Auto-detects if not specified.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">text_field_only</div>
+      <div class="param-type">boolean</div>
+      <div class="param-desc">If true: QA receives only extracted text (saves tokens). If false: QA receives full JSON with hint. User always receives complete JSON. (default: false)</div>
+    </div>
+    <div class="param-row">
       <div class="param-name">project_id</div>
       <div class="param-type">string</div>
       <div class="param-desc">Optional project identifier (≤128 chars) to group related sessions. Reuse the value returned from a previous negotiation.</div>
@@ -868,6 +878,7 @@
   <h2 class="docs-subheading">Smart Editing Workflow</h2>
   <p>Smart Content Editor applies targeted paragraph edits instead of regenerating the entire document when QA detects localized issues.</p>
   <p>Controlled by max_consecutive_smart_edits; edited drafts still pass through full QA each iteration.</p>
+  <p><strong>JSON Support:</strong> When generating JSON-wrapped content, use text_field_path to specify which field(s) contain the primary text. Smart Edit extracts text from these fields, applies edits, and reconstructs the JSON. Use text_field_only=true to send only text to QA (saves tokens).</p>
 </section>
 
 <section id="gran-sabio-escalation" class="docs-section">

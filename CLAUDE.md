@@ -86,6 +86,11 @@ ATTACHMENTS_RETENTION_DAYS=32850  # Override attachment retention period
 # Smart Edit Configuration (optional)
 MAX_PARAGRAPHS_PER_INCREMENTAL_RUN=12  # Max paragraphs edited per smart edit iteration
 DEFAULT_MAX_CONSECUTIVE_SMART_EDITS=10  # Max consecutive smart edits before full regeneration
+MAX_JSON_RECURSION_DEPTH=3  # Max depth for automatic JSON text field discovery
+
+# Evidence Grounding Configuration (ECONOMY mode - optimized for cost)
+EVIDENCE_GROUNDING_EXTRACTION_MODEL=gpt-5-nano   # Cheap ($0.05/$0.40/M), no logprobs needed
+EVIDENCE_GROUNDING_SCORING_MODEL=gpt-4o-mini    # Requires logprobs support
 ```
 
 Model specifications are centralized in `model_specs.json` with provider-specific configurations, token limits, and pricing tiers.
@@ -116,6 +121,20 @@ Model specifications are centralized in `model_specs.json` with provider-specifi
 **Attachment Maintenance**: AttachmentManager.run_cleanup() valida firmas/sha, reconstruye uploads/index.json, respeta config.ATTACHMENTS.retention_days (override con ATTACHMENTS_RETENTION_DAYS) y dispone de CLI (python tools/attachments_cli.py cleanup|list|delete) para operaciones manuales (dry-run por defecto).
 
 **Gran Sabio Escalation**: When max iterations reached without approval, the system escalates to a premium model for final decision and potential content modification.
+
+**Smart Edit JSON Field Extraction**: When generating JSON output, smart-edit needs to work on the text content, not the JSON structure. The system automatically extracts text fields for editing:
+- **`text_field_path`**: Specify which JSON field(s) contain the primary text using jmespath notation (e.g., `"generated_text"`, `"data.content"`, or `["chapter", "notes"]` for multiple fields)
+- **`text_field_only`**: When `true`, QA receives only extracted text (saves tokens). When `false`, QA receives full JSON with hint about primary fields
+- **Auto-detection**: If `text_field_path` not specified, automatically finds the largest string field (errors if ambiguous)
+- **Markdown extraction**: Automatically extracts JSON from markdown ```json code blocks
+- **Reconstruction**: After smart-edit completes, the edited text is reconstructed back into the original JSON structure
+- See `json_field_utils.py` for implementation details
+
+**Evidence Grounding (Strawberry)**: Detects procedural hallucination by measuring if the model actually relied on cited evidence. Uses a dual-model architecture for cost optimization:
+- **Claim Extraction** (`EVIDENCE_GROUNDING_EXTRACTION_MODEL`): Uses gpt-5-nano by default (cheapest: $0.05/$0.40 per M tokens). Does NOT require logprobs.
+- **Budget Scoring** (`EVIDENCE_GROUNDING_SCORING_MODEL`): Uses gpt-4o-mini by default (requires logprobs support). Measures P(YES|evidence) vs P(YES|no_evidence) to detect confabulation.
+- Alternative models: `grok-4-1-fast-non-reasoning` for speed (2.5x faster extraction, supports logprobs with top_logprobs=8 max)
+- Benchmark script: `python dev_tests/test_grounding_model_comparison.py --save`
 
 **JSON Schema Structured Outputs**: The system supports native JSON Schema structured outputs across all major AI providers (implemented Nov 2025). Key behaviors:
 - **Grok (xAI)**: Uses `response_format` with `json_schema` type for all Grok 2-1212+ models

@@ -529,6 +529,14 @@ Act to the highest editorial standards and deliver a concise, well-reasoned deci
         description="Default phrase length when pre-scan is not used"
     )
 
+    # JSON Field Extraction Configuration
+    MAX_JSON_RECURSION_DEPTH: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum depth for recursive JSON field search in smart-edit extraction"
+    )
+
     # Session management
     MAX_ACTIVE_SESSIONS: int = Field(default=100, description="Maximum active sessions")
     SESSION_TIMEOUT: int = Field(default=3600, description="Session timeout in seconds")
@@ -746,6 +754,11 @@ Act to the highest editorial standards and deliver a concise, well-reasoned deci
         )
         self.SMART_EDIT_DEFAULT_PHRASE_LENGTH = int(
             os.getenv("SMART_EDIT_DEFAULT_PHRASE_LENGTH", "5")
+        )
+
+        # JSON Field Extraction
+        self.MAX_JSON_RECURSION_DEPTH = int(
+            os.getenv("MAX_JSON_RECURSION_DEPTH", "3")
         )
 
         # Model Reliability

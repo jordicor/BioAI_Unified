@@ -809,6 +809,24 @@ class ContentRequest(BaseModel):
         default=False,
         description="When true, enforce JSON validation/payload handling while keeping the declared content_type.",
     )
+    text_field_path: Optional[Union[str, List[str]]] = Field(
+        default=None,
+        description=(
+            "Path(s) to primary text field(s) in JSON output using jmespath notation. "
+            "Single string or list. Examples: 'generated_text', ['chapter', 'notes']. "
+            "If not specified with json_output=true, auto-detects largest string field. "
+            "Returns error if multiple ambiguous candidates found."
+        )
+    )
+    text_field_only: bool = Field(
+        default=False,
+        description=(
+            "Controls what content is sent to QA/Consensus/GranSabio when processing JSON. "
+            "If true: Send only extracted text field(s) for evaluation (saves tokens). "
+            "If false: Send complete JSON with hint about primary fields. "
+            "In both cases, user receives complete JSON."
+        )
+    )
     username: Optional[str] = Field(default=None, description="User identifier required when referencing attachments")
     project_id: Optional[str] = Field(
         default=None,
@@ -1055,6 +1073,17 @@ class ContentRequest(BaseModel):
             raise ValueError(
                 "gran_sabio_call_limit_per_session must be -1 (unlimited) or positive integer."
             )
+        return v
+
+    @field_validator('text_field_path')
+    @classmethod
+    def validate_text_field_path_syntax(cls, v: Optional[Union[str, List[str]]]) -> Optional[Union[str, List[str]]]:
+        """Validate text_field_path syntax using json_field_utils validation."""
+        if v is not None:
+            from json_field_utils import validate_text_field_path
+            is_valid, error = validate_text_field_path(v)
+            if not is_valid:
+                raise ValueError(error)
         return v
 
     @model_validator(mode="after")

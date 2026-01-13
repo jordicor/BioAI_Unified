@@ -32,6 +32,7 @@ from services.attachment_manager import (
 from tools.ai_json_cleanroom import validate_ai_json, ValidationResult
 from usage_tracking import UsageTracker, inject_costs_into_json_payload, merge_costs_into_json_string
 from word_count_utils import build_word_count_instructions, count_words, prepare_qa_layers_with_word_count
+from json_field_utils import try_extract_json_from_content, prepare_content_for_qa, reconstruct_json
 
 from . import app_state
 from .app_state import (
@@ -1012,6 +1013,23 @@ async def _generate_smart_edits(
             },
         )
 
+        # Reconstruct JSON if we have json_context (Phase 5: JSON field extraction)
+        json_context = smart_edit_data.get("json_context")
+        if json_context and not json_context.get("error"):
+            # Build edited_texts dict for reconstruction
+            # For single field, map the path to the edited content
+            # For multiple fields, this assumes all fields share the same edited content
+            # (future enhancement: track edits per field)
+            edited_texts = {path: final_content for path in json_context["text_field_paths"]}
+            final_content = reconstruct_json(json_context, edited_texts)
+            # Update parsed content in session for _get_final_content()
+            try:
+                session["json_parsed_content"] = orjson.loads(final_content)
+                logger.info(f"[SMART_EDIT] JSON reconstructed after editing")
+            except orjson.JSONDecodeError as json_err:
+                logger.error(f"[SMART_EDIT] Failed to parse reconstructed JSON: {json_err}")
+                # Keep final_content as the reconstructed string anyway
+
         return final_content
 
     except Exception as e:
@@ -1029,6 +1047,18 @@ async def _generate_smart_edits(
                 "error": str(e),
             },
         )
+
+        # Reconstruct JSON with original content if we have json_context (Phase 5)
+        json_context = smart_edit_data.get("json_context")
+        if json_context and not json_context.get("error"):
+            edited_texts = {path: base_content for path in json_context["text_field_paths"]}
+            reconstructed = reconstruct_json(json_context, edited_texts)
+            try:
+                session["json_parsed_content"] = orjson.loads(reconstructed)
+                logger.info(f"[SMART_EDIT] JSON reconstructed with original content after error")
+            except orjson.JSONDecodeError:
+                pass  # Keep original base_content
+            return reconstructed
 
         return base_content
 
@@ -1170,6 +1200,7 @@ async def process_content_generation(
         session.setdefault("smart_edit_consecutive", 0)
         session.setdefault("generation_mode", "normal")  # "normal" | "smart_edit"
         session.setdefault("smart_edit_data", None)      # Data for smart edit generation
+        session.setdefault("json_context", None)         # JSON extraction context for smart edit
         await add_verbose_log(session_id, "🚀 Starting content generation...")
 
         # Track reason for Gran Sabio fallback (set when breaking out of iteration loop)
@@ -1873,6 +1904,37 @@ ITERATION CONTEXT:
                 len(normalized_qa_models) * len(qa_layers_to_use)
             )
 
+            # =========================================================================
+            # JSON Field Extraction (Smart Edit JSON Support)
+            # =========================================================================
+            # Extract text from JSON before pre-scan and QA evaluation.
+            # This ensures smart-edit operates on plain text, not JSON-wrapped content.
+            json_context, text_for_processing = try_extract_json_from_content(
+                content=content,
+                json_output=getattr(request, 'json_output', False),
+                text_field_path=getattr(request, 'text_field_path', None),
+                max_recursion_depth=config.MAX_JSON_RECURSION_DEPTH
+            )
+
+            # Check for ambiguous field detection error
+            if json_context and json_context.get("error") == "ambiguous_fields":
+                error_msg = json_context["message"]
+                logger.error(f"Session {session_id}: {error_msg}")
+                session["error"] = error_msg
+                update_session_status(session, session_id, GenerationStatus.FAILED)
+                return
+
+            # Store json_context in session for reconstruction later
+            session['json_context'] = json_context
+
+            if json_context:
+                logger.info(
+                    f"Session {session_id}: JSON extracted. "
+                    f"Fields: {json_context['text_field_paths']}, "
+                    f"Discovered: {json_context['text_field_discovered']}, "
+                    f"Text length: {len(text_for_processing)} chars"
+                )
+
             # Pre-scan content for optimal marker configuration (smart edit robustness)
             from content_editor import _find_optimal_phrase_length, _build_word_map
 
@@ -1892,8 +1954,9 @@ ITERATION CONTEXT:
 
             if smart_edit_enabled:
                 # Find optimal phrase length for unique markers
+                # Use text_for_processing (extracted from JSON if applicable) for accurate tokenization
                 optimal_n = _find_optimal_phrase_length(
-                    content,
+                    text_for_processing,
                     min_n=config.SMART_EDIT_MIN_PHRASE_LENGTH,
                     max_n=config.SMART_EDIT_MAX_PHRASE_LENGTH
                 )
@@ -1906,7 +1969,7 @@ ITERATION CONTEXT:
                 else:
                     # Fallback to word_index mode
                     marker_mode = "word_index"
-                    word_map_tokens, word_map_formatted = _build_word_map(content)
+                    word_map_tokens, word_map_formatted = _build_word_map(text_for_processing)
                     logger.info(f"Session {session_id}: Smart edit using word_index mode (word_map size: {len(word_map_tokens)})")
 
                 # Store marker config in session for smart edit phase
@@ -1932,9 +1995,17 @@ ITERATION CONTEXT:
 
             while qa_retry_count <= config.MAX_QA_TIMEOUT_RETRIES and not qa_evaluation_success:
                 try:
+                    # Prepare content for QA based on text_field_only flag
+                    # If JSON was extracted, this controls whether QA sees only text or full JSON with hints
+                    qa_content = prepare_content_for_qa(
+                        content,
+                        json_context,
+                        getattr(request, 'text_field_only', False)
+                    )
+
                     qa_comprehensive_result = await asyncio.wait_for(
                         qa_engine.evaluate_content_comprehensive(
-                            content=content,
+                            content=qa_content,
                             layers=qa_layers_to_use,
                             qa_models=normalized_qa_models,
                             progress_callback=qa_progress_callback,
@@ -2461,8 +2532,9 @@ ITERATION CONTEXT:
                         # Set generation mode to smart_edit for next iteration
                         session["generation_mode"] = "smart_edit"
                         session["smart_edit_data"] = {
-                            "base_content": content,
+                            "base_content": text_for_processing,  # Use extracted text, not JSON
                             "edit_ranges": edit_decision.edit_ranges,
+                            "json_context": json_context,  # For JSON reconstruction after edit
                             "edit_metadata": {
                                 "strategy": edit_decision.strategy,
                                 "reason": edit_decision.reason,
@@ -2831,11 +2903,26 @@ ITERATION CONTEXT:
                     qa_retry_count_gs = 0
                     qa_evaluation_success_gs = False
 
+                    # Extract JSON from Gran Sabio content if needed (for QA preparation)
+                    gs_json_context, gs_text_for_processing = try_extract_json_from_content(
+                        content=gran_sabio_content,
+                        json_output=getattr(request, 'json_output', False),
+                        text_field_path=getattr(request, 'text_field_path', None),
+                        max_recursion_depth=config.MAX_JSON_RECURSION_DEPTH
+                    )
+
+                    # Prepare Gran Sabio content for QA based on text_field_only flag
+                    gs_qa_content = prepare_content_for_qa(
+                        gran_sabio_content,
+                        gs_json_context,
+                        getattr(request, 'text_field_only', False)
+                    )
+
                     while qa_retry_count_gs <= config.MAX_QA_TIMEOUT_RETRIES and not qa_evaluation_success_gs:
                         try:
                             qa_comprehensive_result = await asyncio.wait_for(
                                 qa_engine.evaluate_content_comprehensive(
-                                    content=gran_sabio_content,
+                                    content=gs_qa_content,
                                     layers=qa_layers_to_use,
                                     qa_models=normalized_qa_models_gs,
                                     progress_callback=qa_progress_callback,
