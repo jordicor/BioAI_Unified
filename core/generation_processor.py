@@ -1569,7 +1569,7 @@ ITERATION CONTEXT:
                                         metadata={"requested_model": request.generator_model, "json_retry": json_retry_count},
                                     ) if usage_tracker else None,
                                     phase_logger=phase_logger,
-                                    images=images,
+                                    images=images_for_generation,
                                 ):
                                     # Handle StreamChunk (Claude with thinking) vs plain string
                                     if isinstance(chunk, StreamChunk):
