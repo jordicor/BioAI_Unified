@@ -1906,35 +1906,52 @@ ITERATION CONTEXT:
             )
 
             # =========================================================================
-            # JSON Field Extraction (Smart Edit JSON Support)
+            # Determine Smart Editing Mode FIRST (before JSON field detection)
             # =========================================================================
-            # Extract text from JSON before pre-scan and QA evaluation.
-            # This ensures smart-edit operates on plain text, not JSON-wrapped content.
-            json_context, text_for_processing = try_extract_json_from_content(
-                content=content,
-                json_output=getattr(request, 'json_output', False),
-                target_field=getattr(request, 'target_field', None),
-                max_recursion_depth=config.MAX_JSON_RECURSION_DEPTH
+            smart_editing_mode = getattr(request, 'smart_editing_mode', 'auto')
+            content_type = getattr(request, 'content_type', 'other')
+            editable_types = ["biography", "article", "script", "story", "essay", "blog", "novel"]
+            smart_edit_enabled = (
+                smart_editing_mode == "always" or
+                (smart_editing_mode == "auto" and content_type in editable_types)
             )
 
-            # Check for ambiguous field detection error
-            if json_context and json_context.get("error") == "ambiguous_fields":
-                error_msg = json_context["message"]
-                logger.error(f"Session {session_id}: {error_msg}")
-                session["error"] = error_msg
-                update_session_status(session, session_id, GenerationStatus.FAILED)
-                return
+            # =========================================================================
+            # JSON Field Extraction (Smart Edit JSON Support)
+            # =========================================================================
+            # Only perform auto-detection of text fields if smart editing is enabled
+            # or if an explicit target_field is provided. This prevents ambiguous field
+            # errors for JSON-only requests (like analysis) that don't need smart edit.
+            json_context = None
+            text_for_processing = content
+            explicit_target_field = getattr(request, 'target_field', None)
+
+            if smart_edit_enabled or explicit_target_field:
+                json_context, text_for_processing = try_extract_json_from_content(
+                    content=content,
+                    json_output=getattr(request, 'json_output', False),
+                    target_field=explicit_target_field,
+                    max_recursion_depth=config.MAX_JSON_RECURSION_DEPTH
+                )
+
+                # Check for ambiguous field detection error
+                if json_context and json_context.get("error") == "ambiguous_fields":
+                    error_msg = json_context["message"]
+                    logger.error(f"Session {session_id}: {error_msg}")
+                    session["error"] = error_msg
+                    update_session_status(session, session_id, GenerationStatus.FAILED)
+                    return
+
+                if json_context:
+                    logger.info(
+                        f"Session {session_id}: JSON extracted. "
+                        f"Fields: {json_context['target_field_paths']}, "
+                        f"Discovered: {json_context['target_field_discovered']}, "
+                        f"Text length: {len(text_for_processing)} chars"
+                    )
 
             # Store json_context in session for reconstruction later
             session['json_context'] = json_context
-
-            if json_context:
-                logger.info(
-                    f"Session {session_id}: JSON extracted. "
-                    f"Fields: {json_context['target_field_paths']}, "
-                    f"Discovered: {json_context['target_field_discovered']}, "
-                    f"Text length: {len(text_for_processing)} chars"
-                )
 
             # Pre-scan content for optimal marker configuration (smart edit robustness)
             from content_editor import _find_optimal_phrase_length, _build_word_map
@@ -1943,15 +1960,6 @@ ITERATION CONTEXT:
             marker_length = None
             word_map_formatted = None
             word_map_tokens = None
-
-            # Determine if smart editing is enabled for this content type
-            smart_editing_mode = getattr(request, 'smart_editing_mode', 'auto')
-            content_type = getattr(request, 'content_type', 'other')
-            editable_types = ["biography", "article", "script", "story", "essay", "blog", "novel"]
-            smart_edit_enabled = (
-                smart_editing_mode == "always" or
-                (smart_editing_mode == "auto" and content_type in editable_types)
-            )
 
             if smart_edit_enabled:
                 # Find optimal phrase length for unique markers
