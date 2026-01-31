@@ -15,11 +15,15 @@ Run with: python dev_tests/test_mcp_emulation.py
 """
 
 import asyncio
-import json
 import os
 import sys
 import time
 from typing import Any, Optional, Dict
+from pathlib import Path
+
+# Add parent directory to path for json_utils import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import json_utils as json
 
 import httpx
 

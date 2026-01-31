@@ -6,8 +6,12 @@ Helper functions for formatting and running demo scripts.
 """
 
 import sys
-import json
 import textwrap
+from pathlib import Path
+
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import json_utils as json
 from typing import Any, Callable, Dict, Optional, List
 
 import aiohttp

@@ -57,6 +57,7 @@ from typing import Dict, Any
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+import json_utils as json
 
 from client import AsyncGranSabioClient
 from demos.common import run_demo, print_header, safe_print, print_json_content, colorize
@@ -507,7 +508,6 @@ async def demo_code_analyzer():
         content = final.get("content", "{}")
 
         try:
-            import json
             if isinstance(content, str):
                 analysis = json.loads(content)
             else:

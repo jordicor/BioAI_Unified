@@ -16,7 +16,7 @@ Features:
 
 import asyncio
 import hashlib
-import json
+import json_utils as json
 import logging
 import re
 import sqlite3

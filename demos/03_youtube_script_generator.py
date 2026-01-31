@@ -45,6 +45,7 @@ from typing import Dict, Any, Optional
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+import json_utils as json
 
 from client import AsyncGranSabioClient
 from demos.common import (
@@ -234,7 +235,6 @@ Consider what makes content viral and engaging on YouTube.
         )
 
         # Parse JSON content
-        import json
         try:
             content = final.get("content", "{}")
             if isinstance(content, str):
@@ -475,7 +475,6 @@ Aim for 8-15 scenes depending on video length.
             on_status=lambda s: print(f"  Status: {s['status']}")
         )
 
-        import json
         try:
             content = final.get("content", "{}")
             if isinstance(content, str):
@@ -550,7 +549,6 @@ Think about what makes people click on YouTube.
             on_status=lambda s: print(f"  Status: {s['status']}")
         )
 
-        import json
         try:
             content = final.get("content", "{}")
             if isinstance(content, str):

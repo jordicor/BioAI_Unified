@@ -9,7 +9,12 @@ Tests use mocked AI responses to avoid API calls.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import json
+import sys
+from pathlib import Path
+
+# Add parent directory to path for json_utils import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import json_utils as json
 
 # Import module under test
 from evidence_grounding.claim_extractor import (

@@ -1,6 +1,13 @@
 """Quick test to verify fake AI streaming response parsing."""
 
 import asyncio
+import sys
+from pathlib import Path
+
+# Add parent directory to path for json_utils import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import json_utils as json
+
 import openai
 
 
@@ -43,7 +50,6 @@ async def test_fake_stream():
     print("-" * 50)
 
     # Try to parse as JSON
-    import json
     try:
         parsed = json.loads(full_response)
         print("JSON parsed successfully!")

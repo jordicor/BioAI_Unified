@@ -22,8 +22,11 @@ Options:
 
 import os
 import sys
-import json
 import argparse
+
+# Add parent directory to path for json_utils import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import json_utils as json
 import requests
 from typing import Dict, List, Set, Any
 from datetime import datetime

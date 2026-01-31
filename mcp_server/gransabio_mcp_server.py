@@ -22,10 +22,13 @@ Usage:
 """
 
 import asyncio
-import json
 import os
 import sys
 import time
+
+# Add parent directory to path for json_utils import
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import json_utils as json
 from typing import Any, Optional, List, Dict
 
 import httpx

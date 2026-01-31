@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import json_utils as json
 import logging
 from functools import lru_cache
 from pathlib import Path

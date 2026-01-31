@@ -5,7 +5,7 @@ Streaming endpoints for Gran Sabio LLM.
 from __future__ import annotations
 
 import asyncio
-import json
+import json_utils as json
 import time
 from typing import List
 

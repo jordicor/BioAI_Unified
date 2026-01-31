@@ -9,7 +9,6 @@ import os
 import sys
 import asyncio
 import aiohttp
-import json
 from pathlib import Path
 
 

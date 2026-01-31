@@ -3,8 +3,12 @@ Extract full details from problematic session to analyze JSON schema issues
 Session: 0097ba67-ce49-462d-ae26-e8741e0bcce9
 """
 import sqlite3
-import json
+import sys
 from pathlib import Path
+
+# Add parent directory to path for json_utils import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import json_utils as json
 
 DB_PATH = Path(__file__).parent.parent / "debugger_history.db"
 SESSION_ID = "0097ba67-ce49-462d-ae26-e8741e0bcce9"

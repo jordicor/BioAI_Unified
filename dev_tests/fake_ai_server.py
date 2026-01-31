@@ -27,11 +27,15 @@ To use with GranSabio LLM:
 """
 
 import asyncio
-import json
 import re
 import time
 import uuid
+import sys
 from pathlib import Path
+
+# Add parent directory to path for json_utils import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import json_utils as json
 from typing import Optional, Tuple
 
 import uvicorn
